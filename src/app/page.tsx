@@ -9,7 +9,7 @@ import {
   useUser,
 } from '@clerk/nextjs'
 import React, { useEffect, useState, useRef } from 'react';
-import { faAdd, faChevronDown, faClose, faFile, faChevronLeft, faChevronRight, faCompass } from '@fortawesome/free-solid-svg-icons';
+import { faAdd, faChevronDown, faClose, faFile, faChevronLeft, faChevronRight, faCompass, faShare, faPrint, faUpRightAndDownLeftFromCenter, faExpand, faSquareCheck, faTrash, faCircleCheck, faClone, faPenNib, faSquareMinus, faMinus } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { Patient, Observation, Hospital, PatientObservation, ObservationDefaultView } from './types';
 import Notification from './notify';
@@ -34,28 +34,33 @@ export default function Home() {
   const [patientBirthYear, setPatientBirthYear] = useState('');
   const [patientPhoneNumber, setPatientPhoneNumber] = useState('');
   const [scanUrls, setScanUrls] = useState([]);
-  const [droppedFiles, setDroppedFiles] = useState([]);
-  const [conclusion, setConclusion] = useState('');
+  const [droppedFiles, setDroppedFiles] = useState<File[]>([]);
+  const [conclusion, setConclusion] = useState('hey ');
   const [notification, setNotification] = useState<{ message: string; type: 'error' | 'success' |'info' } | null>(null);  // notification message
   const [hospitalData, setHospitalData] = useState<Hospital | null>(null);
   const [hospitalId, setHospitalId] = useState('');
   const [allObservations, setAllObservations] = useState<PatientObservation[]>([]);
   const [showExpandedObservation, setShowExpandedObservation] = useState(false);
+  const [showExpandedConclusion, setShowExpandedConclusion] = useState(false);
   const [isFetchingObservationById, setIsFetchingObservationById] = useState(false);
   const [expandObservationIndex, setExpandObservationIndex] = useState('');
   const [defaultViewObservations, setDefaultViewObservations] = useState<ObservationDefaultView[]>([]);
   const [oneObservation, setOneObservation] = useState<PatientObservation | null>(null);
+  const [isGeneratingConclusion, setIsGeneratingConclusion] = useState(false);
+  const [radiologistName, setRadiologistName] = useState('');
+  const [isRegeneratingConclusion, setIsRegeneratingConclusion] = useState(false);
+  const [isDeletingObservation, setIsDeletingObservation] = useState(false);
+  const [isSavingObservation, setIsSavingObservation] = useState(false);
   
   const sampleData = [
-    {imageUrl: "https://firebasestorage.googleapis.com/v0/b/chatwithpdf-30e42.appspot.com/o/images%2F309.JPG?alt=media&token=bd92fbfd-edd4-4fb4-b8f5-3cff8cb0d9d7"},
-    {imageUrl: "https://firebasestorage.googleapis.com/v0/b/chatwithpdf-30e42.appspot.com/o/images%2F309.JPG?alt=media&token=bd92fbfd-edd4-4fb4-b8f5-3cff8cb0d9d7"},
-    {imageUrl: "https://firebasestorage.googleapis.com/v0/b/chatwithpdf-30e42.appspot.com/o/images%2F309.JPG?alt=media&token=bd92fbfd-edd4-4fb4-b8f5-3cff8cb0d9d7"},
-    {imageUrl: "https://firebasestorage.googleapis.com/v0/b/chatwithpdf-30e42.appspot.com/o/images%2F309.JPG?alt=media&token=bd92fbfd-edd4-4fb4-b8f5-3cff8cb0d9d7"},
-    {imageUrl: "https://firebasestorage.googleapis.com/v0/b/chatwithpdf-30e42.appspot.com/o/images%2F309.JPG?alt=media&token=bd92fbfd-edd4-4fb4-b8f5-3cff8cb0d9d7"},
+    {imageUrl: "https://firebasestorage.googleapis.com/v0/b/chatwithpdf-30e42.appspot.com/o/images%2F1724335515486.jpg?alt=media&token=3b886b80-3815-4146-b548-1d3dd27e4643"},
+    {imageUrl: "https://firebasestorage.googleapis.com/v0/b/chatwithpdf-30e42.appspot.com/o/images%2F1724336411144.jpg?alt=media&token=b7cbd4c8-58ea-4e7a-8ec3-dc04440c7f2b"},
+    {imageUrl: "https://firebasestorage.googleapis.com/v0/b/chatwithpdf-30e42.appspot.com/o/images%2F1724362545562.jpg?alt=media&token=dcc805c0-b4ce-4574-adf4-c3354a90c7bc"},
   ]
 
   // refs
   const expandRef = useRef<HTMLDivElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null); // Create a ref for the file input
 
   // Close the expanded image if clicked outside
   useEffect(() => {
@@ -109,10 +114,16 @@ export default function Home() {
 
   const proceedWithScans = () => {
     setIsAddingScanAndPatient(true);
+    // upload scans to firebase storage
+    uploadScansToFirebaseStorage();
+    // save patient details to firestore
+    savePatientDetails();
+    // save observation to firestore
   }
 
   // generate conclusion
   const handleGenerateConclusion = async () => {
+    setIsGeneratingConclusion(true);
     try {
       const result = await fetch('/api/generate', {
         method: 'POST',
@@ -133,6 +144,8 @@ export default function Home() {
     } catch (error) {
       console.error(error)
       triggerNotification('An error occurred', 'error')
+    } finally {
+      setIsGeneratingConclusion(false)
     }
   };
   
@@ -429,6 +442,7 @@ export default function Home() {
         {/* Image */}
         <div className="flex items-center justify-center w-full">
           <Image
+            priority={true}
             src={images[currentIndex].imageUrl}
             alt={`Observation Image ${currentIndex + 1}`}
             width={500}  // Adjust the width as needed
@@ -452,12 +466,13 @@ export default function Home() {
   const DefaultView = () => {
     return (
       <div className="flex flex-col items-center justify-center block">
-        <div className="flex flex-row flex-wrap gap-8 items-center justify-start">
+        <div className="flex flex-row flex-wrap gap-8 items-center justify-center">
             {sampleData.map((obs, index) => (
-              <div className="flex flex-col justify-between gap-2">
+              <div key={obs.imageUrl+index} className="flex flex-col justify-between gap-2">
                 {/* show frist image */}
                 <div className="flex items-center justify-center p-2 border border-[#a1a1aa] rounded-md">
                   <Image
+                    priority={true}
                     src={sampleData[0].imageUrl}
                     alt={`Observation Image ${sampleData[0].imageUrl}`}
                     width={300}  // Adjust the width as needed
@@ -475,7 +490,7 @@ export default function Home() {
                 }} 
                 className={`bg-[#0c4a6e] text-black p-2 rounded-md w-full font-bold hover:bg-[#0369a1]`}>
                 {!isFetchingObservationById 
-                  ? <span className='flex justify-center items-center text-white'>Expand</span>
+                  ? <span className='flex justify-center items-center text-white'><FontAwesomeIcon icon={faExpand} className="mr-2" />Expand</span>
                   : <span className='flex justify-center items-center text-white'>{loader()}</span>
                 }
               </button>
@@ -527,7 +542,7 @@ export default function Home() {
                 <p className="text-md">Quick info</p>
                 <div className="mt-2 flex flex-row gap-2 items-center justify-center">
                   <div className="flex flex-col gap-1 items-start justify-start w-1/2">
-                    <p className="text-xs text-[#a1a1aa] w-1/3 block font-bold">Radiologist</p>
+                    <p className="text-xs text-[#a1a1aa] block font-bold">Radiologist</p>
                     <input
                       disabled={true}
                       value="Dr. Nigora"
@@ -539,7 +554,7 @@ export default function Home() {
                       />
                   </div>
                   <div className="flex flex-col gap-1 items-start justify-start w-1/2">
-                    <p className="text-xs text-[#a1a1aa] w-1/3 block font-bold">Head Doctor:</p>
+                    <p className="text-xs text-[#a1a1aa] block font-bold">Head Doctor:</p>
                     <input
                       disabled={true}
                       value="Dr. Nigora"
@@ -623,6 +638,172 @@ export default function Home() {
     );
   };
 
+  // show expanded conclusion
+  const ExpandedConclusionView = () => {
+    return (
+      <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-80 z-40">
+      <div ref={expandRef} className="w-[90%] bg-[#2e2e2e] rounded-md">
+        {/* header */}
+        <div className="flex flex-row justify-between border-b border-[#a1a1aa] p-4">
+          <p className="text-md">Generated conclusion</p>
+          <button
+            onClick={() => setShowExpandedConclusion(!showExpandedConclusion)}
+            className={`flex items-center justify-center w-[24px] h-[24px] rounded-full shadow cursor-pointer hover:bg-[#151515] p-2`}>
+              {!isAddingScanAndPatient
+                ? <FontAwesomeIcon icon={faClose} />
+                : <span className='flex justify-center items-center text-white'>{loader()}</span>
+              }
+          </button>
+        </div>
+        <div className="flex flex-row p-4 gap-4 items-center justify-between">
+          {/* show images as slider*/}
+          <div className="w-1/2">
+            <ImageSlider images={sampleData} />
+          </div>
+          <div className="w-1/2">
+            {/* show conclusion */}
+            <div className="">
+                <p className="text-md">Conclusion</p>
+                {isGeneratingConclusion 
+                  ? loader() 
+                  : (
+                    <textarea
+                      value={conclusion}
+                      onChange={(e) => setConclusion(e.target.value)} // Append the last typed character
+                      autoComplete="off"
+                      id="conclusion"
+                      className="mt-2 placeholder:text-[#aaaaaa] placeholder:text-sm w-full px-4 py-3 text-white bg-transparent rounded border border-[#a1a1aa] focus:outline-none focus:border-white resize-none"
+                      rows={4} // Specify the number of rows (height) of the textarea
+                    />
+                  )
+                }
+            </div>
+            {/* show observation details */}
+            <div className="mt-[40px] flex flex-col gap-6 justify-between items-start">
+              <div className="w-full">
+                <p className="text-md">Quick info <span className="text-[#a1a1aa] text-xs">(fill it out)</span></p>
+                <div className="mt-2 flex flex-row gap-2 items-start justify-start">
+                  <div className="flex flex-col gap-1 items-start justify-start w-1/2">
+                    <p className="text-xs text-[#a1a1aa] block font-bold">Radiologist <span className="text-red-500">*</span></p>
+                    <input
+                      value={radiologistName}
+                      onChange={(e) => setRadiologistName(e.target.value)}
+                      autoComplete="off"
+                        type="text"
+                        id="radiologistName"
+                        placeholder="Enter radiologist name"
+                        className="w-2/3 mt-2 placeholder:text-[#aaaaaa] placeholder:text-sm w-full px-4 py-3 text-white text-sm bg-transparent rounded border border-[#a1a1aa] focus:outline-none focus:border-white"
+                      />
+                  </div>
+                </div>
+              </div>
+              {/* show user details */}
+              <div className="w-full">
+                <p className="text-md">Patient info</p>
+                <div className="mt-2 w-full flex flex-row gap-2 items-center justify-center">
+                <div className="flex flex-col gap-1 items-start justify-start w-3/6">
+                  <p className="text-xs text-[#a1a1aa] block font-bold">Full Name:</p>
+                  <input
+                      disabled={true}
+                      value="Ibrohim Abdivokhidov"
+                      autoComplete="off"
+                        type="text"
+                        id="fullName"
+                        placeholder="Enter your Patient ID"
+                        className="w-2/3 mt-2 placeholder:text-[#aaaaaa] placeholder:text-sm w-full px-4 py-3 text-sm text-white bg-transparent rounded border border-[#a1a1aa] focus:outline-none focus:border-white"
+                      />
+                  </div>
+                  <div className="flex flex-col gap-1 items-start justify-start w-1/6">
+                  <p className="text-xs text-[#a1a1aa] block font-bold">Birth Year:</p>
+                  <input
+                    disabled={true}
+                    value="2003"
+                    autoComplete="off"
+                      type="text"
+                      id="birthYear"
+                      placeholder="Enter your Patient ID"
+                      className="w-2/3 mt-2 placeholder:text-[#aaaaaa] placeholder:text-sm w-full px-4 py-3 text-sm text-white bg-transparent rounded border border-[#a1a1aa] focus:outline-none focus:border-white"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1 items-start justify-start w-2/6">
+                  <p className="text-xs text-[#a1a1aa] block font-bold">Phone Number:</p>
+                  <input
+                    disabled={true}
+                    value="+998938966698"
+                    autoComplete="off"
+                      type="text"
+                      id="phoneNumber"
+                      placeholder="Enter your Patient ID"
+                      className="w-2/3 mt-2 placeholder:text-[#aaaaaa] placeholder:text-sm w-full px-4 py-3 text-sm text-white bg-transparent rounded border border-[#a1a1aa] focus:outline-none focus:border-white"
+                    />
+                    </div>
+                </div>
+              </div>
+            </div>
+            {/* show action buttons */}
+            <div className="flex flex-row gap-4 mt-[60px]"> 
+              <button 
+                    disabled={isRegeneratingConclusion || isDeletingObservation || isSavingObservation}
+                  onClick={() => {}} 
+                  className={`bg-[#7f1d1d] text-black p-2 rounded-md w-full font-bold hover:bg-[#b91c1c]`}>
+                  {(!isRegeneratingConclusion || !isDeletingObservation || !isSavingObservation)
+                    ? <span className='flex justify-center items-center text-white'>Delete</span>
+                    : <span className='flex justify-center items-center text-white'>{loader()}</span>
+                  }
+                </button>
+              <button 
+                    disabled={isRegeneratingConclusion || isDeletingObservation || isSavingObservation}
+                  onClick={() => {}} 
+                  className={`bg-[#0c4a6e] text-black p-2 rounded-md w-full font-bold hover:bg-[#0369a1]`}>
+                  {(!isRegeneratingConclusion || !isDeletingObservation || !isSavingObservation)
+                    ? <span className='flex justify-center items-center text-white'>Regenerate</span>
+                    : <span className='flex justify-center items-center text-white'>{loader()}</span>
+                  }
+                </button>
+              <button 
+                    disabled={isRegeneratingConclusion || isDeletingObservation || radiologistName.trim() === '' || isSavingObservation}
+                  onClick={() => {}} 
+                  className={`bg-[#134e4a] text-black p-2 rounded-md w-full font-bold hover:bg-[#0f766e] ${
+                    radiologistName.trim() === '' ? 'cursor-not-allowed' : 'cursor-pointer'
+                  }`}>
+                  {(!isRegeneratingConclusion || !isDeletingObservation || !isSavingObservation)
+                    ? <span className='flex justify-center items-center text-white'>Save</span>
+                    : <span className='flex justify-center items-center text-white'>{loader()}</span>
+                  }
+                </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    );
+  };
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (files) {
+      // Append new files to the existing droppedFiles state onle if file was not already dropped
+      if (droppedFiles.length === 3) {
+        triggerNotification('You can only upload up to 3 files at a time', 'error');
+        return;
+      }
+      const newFiles = Array.from(files).filter(file => !droppedFiles.some(f => f.name === file.name));
+      setDroppedFiles((prevFiles) => [...prevFiles, ...newFiles]);
+    }
+  };
+
+  const handleRemoveFile = (fileName: string) => {
+    // Remove file by filtering out the clicked file
+    setDroppedFiles((prevFiles) => prevFiles.filter(file => file.name !== fileName));
+  };
+
+  const handleSelectScansClick = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.click(); // Trigger the file input click programmatically
+    }
+  };
+
+
   const UploadImageView = () => {
     return (
       <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-80 z-40">
@@ -635,47 +816,89 @@ export default function Home() {
             className={`flex items-center justify-center w-[24px] h-[24px] rounded-full shadow cursor-pointer hover:bg-[#151515] p-2`}>
               {!isAddingScanAndPatient
                 ? <FontAwesomeIcon icon={faClose} />
-                : <span className='flex justify-center items-center text-black'>{loader()}</span>
+                : <span className='flex justify-center items-center text-white'>{loader()}</span>
               }
           </button>
         </div>
         <div className="p-4">
           {/* workspace */}
           <div className="flex flex-row justify-between border border-[#a1a1aa] p-4 rounded-md">
-            <p className="text-md">Workspace: <span className="text-md ml-[20px] text-[#aaaaaa]">My workspace...</span></p>
+            <p className="text-md">Workspace: <span className="text-md ml-[20px] text-[#aaaaaa]">{user?.fullName}'s workspace...</span></p>
             <button
               onClick={() => {}}
               className={`flex items-center justify-center w-[24px] h-[24px] rounded-full shadow cursor-pointer`}>
                 {!isAddingScanAndPatient
                   ? <FontAwesomeIcon icon={faChevronDown} />
-                  : <span className='flex justify-center items-center text-black'>{loader()}</span>
+                  : <span className='flex justify-center items-center text-white'>{loader()}</span>
                 }
             </button>
           </div>
           <div className="mt-[30px] flex flex-row justify-between gap-[40px]">
             {/* upload scans */}
             <div className="flex flex-col justify-between border border-[#a1a1aa] rounded-md w-1/2">
-              <div className="flex items-center justify-center h-64">
-                <input type="file" className="hidden" id="file-upload" />
-                  <label
-                    htmlFor="file-upload"
-                    className="flex flex-col items-center justify-center cursor-pointer h-full w-full"
-                  >
-                    <div className="flex flex-col items-center justify-center">
-                      <FontAwesomeIcon icon={faFile} size="3x" />
-                      <p className="mb-2 mt-2 text-sm text-gray-500">
-                        <span className="font-semibold text-[#aaaaaa]">Drag & drop files</span>
-                      </p>
-                      <p className="text-xs text-[#aaaaaa]">(Only DICOM, PNG, JPEG files supported)</p>
+              <div className="flex items-center justify-center h-64 w-full">
+                {/* Hidden file input */}
+                <input
+                  type="file"
+                  className="hidden"
+                  ref={fileInputRef} // Attach ref to the input
+                  id="file-upload"
+                  onChange={handleFileChange}
+                  multiple
+                />
+
+                {droppedFiles.length === 0 ? (
+                  <div className="flex items-center justify-center h-full w-full">
+                    <label
+                      htmlFor="file-upload"
+                      className="flex flex-col items-center justify-center cursor-pointer h-full w-full"
+                      onClick={handleSelectScansClick} // Handle click to open file dialog
+                    >
+                      <div className="flex flex-col items-center justify-center">
+                        <FontAwesomeIcon icon={faFile} size="3x" />
+                        <p className="mb-2 mt-2 text-sm text-gray-500">
+                          <span className="font-semibold text-[#aaaaaa]">Drag & drop files</span>
+                        </p>
+                        <p className="text-xs text-[#aaaaaa]">(Only DICOM, PNG, JPEG files supported)</p>
+                      </div>
+                    </label>
+                  </div>
+                ) : (
+                  <div className="flex flex-row gap-4 items-center justify-center w-full overflow-auto">
+                    <div className="flex flex-col gap-2 items-center justify-center h-full w-full">
+                      {droppedFiles.map((file) => (
+                        <div key={file.name} className="flex flex-row gap-2 items-center justify-center">
+                          <div className="flex flex-col items-start justify-start p-2 border border-[#a1a1aa] rounded-md">
+                            <p className="text-xs text-white">
+                              File name: <span className="text-[#aaaaaa]"><FontAwesomeIcon icon={faPenNib} className="mr-1" />{file.name}</span>
+                            </p>
+                            <p className="text-xs text-white">
+                              Series/Instance: <span className="text-[#aaaaaa]"><FontAwesomeIcon icon={faClone} className="mr-1" />1</span>
+                            </p>
+                            <p className="text-xs text-white">
+                              Status: <span className="text-[#0f766e]"><FontAwesomeIcon icon={faCircleCheck} className="mr-1" />Valid format</span>
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => handleRemoveFile(file.name)}
+                            className="flex items-center justify-center w-[24px] h-[24px] rounded-full shadow cursor-pointer hover:bg-[#151515] p-2 mt-2"
+                          >
+                            <FontAwesomeIcon icon={faMinus} />
+                          </button>
+                        </div>
+                      ))}
                     </div>
-                  </label>
-                </div>
-              <button 
-                disabled={isUploadingScans}
-                onClick={() => {
-                  // uploadScansToFirebaseStorage();
-                }} 
-                className={`bg-[#a1a1aa] text-black p-2 rounded-md w-full font-bold hover:bg-[#f4f4f5]`}>
+                  </div>
+                )}
+              </div>
+
+              {/* "Select Scan(s)" button to trigger file input */}
+              <button
+                disabled={isUploadingScans || droppedFiles.length === 3}
+                onClick={handleSelectScansClick} // Use the ref click handler
+                className={`bg-[#a1a1aa] text-black p-2 rounded-md w-full font-bold hover:bg-[#f4f4f5] ${
+                  isUploadingScans || droppedFiles.length === 3 ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+              >
                 {!isUploadingScans 
                   ? <span className='flex justify-center items-center text-black'>Select Scan(s)</span>
                   : <span className='flex justify-center items-center text-black'>{loader()}</span>
@@ -686,15 +909,18 @@ export default function Home() {
             <div className="w-1/2">
               {/* Patient ID */}
               <div className="mb-4">
-                <label className="block text-white text-xs font-bold mb-2" htmlFor="patient-id">
+                <p className="block text-white text-xs font-bold mb-2">
                   Patient ID
-                </label>
+                </p>
                 <input
                 value={patientId}
-                onChange={(e) => {setPatientId(e.target.value)}}
+                onChange={(e) => {
+                  console.log(e.target.value)
+                  setPatientId(e.target.value)
+                }}
                 autoComplete="off"
                   type="text"
-                  id="patient-id"
+                  name="id"
                   placeholder="Enter your Patient ID"
                   className="placeholder:text-[#aaaaaa] placeholder:text-sm w-full px-4 py-3 text-white bg-transparent rounded border border-[#a1a1aa] focus:outline-none focus:border-white"
                 />
@@ -702,15 +928,15 @@ export default function Home() {
 
               {/* Full Name */}
               <div className="mb-4">
-                <label className="block text-white text-xs font-bold mb-2" htmlFor="full-name">
+                <p className="block text-white text-xs font-bold mb-2">
                   Full Name <span className="text-red-500">*</span>
-                </label>
+                </p>
                 <input
                 value={patientName}
                 onChange={(e) => {setPatientName(e.target.value)}}
                 autoComplete="off"
                   type="text"
-                  id="full-name"
+                  name="fullname"
                   placeholder="Enter first, middle and last name"
                   className="placeholder:text-[#aaaaaa] placeholder:text-sm w-full px-4 py-3 text-white bg-transparent rounded border border-[#a1a1aa] focus:outline-none focus:border-white"
                 />
@@ -720,16 +946,16 @@ export default function Home() {
               <div className="flex mb-4">
                 {/* Age */}
                 <div className="w-1/3 pr-2">
-                  <label className="block text-white text-xs font-bold mb-2" htmlFor="age">
+                  <p className="block text-white text-xs font-bold mb-2">
                     Birth Year <span className="text-red-500">*</span>
-                  </label>
+                  </p>
                   <div className="flex items-center">
                     <input
                     value={patientBirthYear}
                     onChange={(e) => setPatientBirthYear(e.target.value)}
                     autoComplete="off"
                       type="text"
-                      id="age"
+                      name="age"
                       placeholder="Birth year"
                       className="placeholder:text-[#aaaaaa] placeholder:text-sm w-full px-4 py-3 text-white bg-transparent rounded border border-[#a1a1aa] focus:outline-none focus:border-white"
                     />
@@ -737,15 +963,15 @@ export default function Home() {
                 </div>
                 {/* Phone Number */}
                 <div className="w-2/3 pl-2">
-                  <label className="block text-white text-xs font-bold mb-2" htmlFor="phone-number">
+                  <p className="block text-white text-xs font-bold mb-2">
                     Phone Number
-                  </label>
+                  </p>
                   <input
                   value={patientPhoneNumber}
                   onChange={(e) => setPatientPhoneNumber(e.target.value)}
                     autoComplete="off"
                     type="text"
-                    id="phone-number"
+                    name="phone"
                     placeholder="Enter patient's phone number"
                     className="placeholder:text-[#aaaaaa] placeholder:text-sm w-full px-4 py-3 text-white bg-transparent rounded border border-[#a1a1aa] focus:outline-none focus:border-white"
                   />
@@ -753,10 +979,10 @@ export default function Home() {
               </div>
               {/* Proceed */}
               <button 
-                disabled={isAddingScanAndPatient || patientName === '' || patientBirthYear === ''}
+                disabled={isAddingScanAndPatient || patientName === '' || patientBirthYear === '' || droppedFiles.length === 0}
                 onClick={() => {proceedWithScans}} 
                 className={`bg-[#134e4a] text-white p-2 rounded-md w-full font-bold ${ 
-                  (isAddingScanAndPatient || patientName === '' || patientBirthYear === '') ? 'cursor-not-allowed' : 'cursor-pointer hover:bg-[#0f766e]'}`}>
+                  (isAddingScanAndPatient || patientName === '' || patientBirthYear === '' || droppedFiles.length === 0) ? 'cursor-not-allowed' : 'cursor-pointer hover:bg-[#0f766e]'}`}>
                 {!isAddingScanAndPatient 
                   ? <span className='flex justify-center items-center text-white'>Proceed</span>
                   : <span className='flex justify-center items-center text-white'>{loader()}</span>
@@ -775,10 +1001,11 @@ return (
       <div className="flex flex-col items-center justify-center block">
         <div className="flex flex-row flex-wrap gap-8 items-center justify-start">
             {sampleData.map((obs, index) => (
-              <div className="flex flex-col justify-between gap-2">
+              <div key={obs.imageUrl} className="flex flex-col justify-between gap-2">
                 {/* show report pdf preview */}
                 <div className="flex items-center justify-center p-2 border border-[#a1a1aa] rounded-md">
                   <Image
+                  priority={true}
                     src={sampleData[0].imageUrl}
                     alt={`Observation Image ${sampleData[0].imageUrl}`}
                     width={300}  // Adjust the width as needed
@@ -797,7 +1024,7 @@ return (
                     }} 
                     className={`bg-[#0c4a6e] text-black p-2 rounded-md w-full font-bold hover:bg-[#0369a1]`}>
                     {!isFetchingObservationById 
-                      ? <span className='flex justify-center items-center text-white'>Expand</span>
+                      ? <span className='flex justify-center items-center text-white'><FontAwesomeIcon icon={faExpand} className="mr-2" />Expand</span>
                       : <span className='flex justify-center items-center text-white'>{loader()}</span>
                     }
                   </button>
@@ -809,7 +1036,7 @@ return (
                     }} 
                     className={`bg-[#a1a1aa] text-black p-2 rounded-md w-full font-bold hover:bg-[#f4f4f5]`}>
                     {!isFetchingObservationById 
-                      ? <span className='flex justify-center items-center text-black'>Print</span>
+                      ? <span className='flex justify-center items-center text-black'><FontAwesomeIcon icon={faPrint} className="mr-2" />Print</span>
                       : <span className='flex justify-center items-center text-black'>{loader()}</span>
                     }
                   </button>
@@ -820,7 +1047,7 @@ return (
                     }} 
                     className={`bg-[#134e4a] text-black p-2 rounded-md w-full font-bold hover:bg-[#0f766e]`}>
                     {!isFetchingObservationById 
-                      ? <span className='flex justify-center items-center text-white'>Share</span>
+                      ? <span className='flex justify-center items-center text-white'><FontAwesomeIcon icon={faShare} className="mr-2" />Share</span>
                       : <span className='flex justify-center items-center text-white'>{loader()}</span>
                     }
                   </button>
@@ -893,7 +1120,8 @@ return (
             )}
             {/* show expanded view */}
             {showExpandedObservation && (
-              <ExpandedObservationView />
+              // <ExpandedObservationView />
+              <ExpandedConclusionView />
             )}
           {/* on show upload image view */}
           {showUploadImageView && (
