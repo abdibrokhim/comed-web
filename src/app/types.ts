@@ -8,7 +8,7 @@ export interface Patient {
 }
 
 export interface Observation {
-    id: number;
+    id: string;
     patientId: string;
     imageUrls: [string];
     conclusionText: string;
@@ -21,7 +21,7 @@ export interface Observation {
 }
 
 export interface ObservationDefaultView {
-    id: number;
+    id: string;
     imageUrl: string;
     updatedAt: Timestamp;
     createdAt: Timestamp;

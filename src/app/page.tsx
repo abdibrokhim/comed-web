@@ -35,7 +35,7 @@ export default function Home() {
   const [patientPhoneNumber, setPatientPhoneNumber] = useState('');
   const [scanUrls, setScanUrls] = useState([]);
   const [droppedFiles, setDroppedFiles] = useState<File[]>([]);
-  const [conclusion, setConclusion] = useState('hey ');
+  const [conclusion, setConclusion] = useState('');
   const [notification, setNotification] = useState<{ message: string; type: 'error' | 'success' |'info' } | null>(null);  // notification message
   const [hospitalData, setHospitalData] = useState<Hospital | null>(null);
   const [hospitalId, setHospitalId] = useState('');
@@ -51,6 +51,12 @@ export default function Home() {
   const [isRegeneratingConclusion, setIsRegeneratingConclusion] = useState(false);
   const [isDeletingObservation, setIsDeletingObservation] = useState(false);
   const [isSavingObservation, setIsSavingObservation] = useState(false);
+  const [isSegmentingScans, setIsSegmentingScans] = useState(false);
+  const [isApprovingObservation, setIsApprovingObservation] = useState(false);
+  const [savingPatientDetails, setSavingPatientDetails] = useState(false);
+  const [refetch, setRefetch] = useState(false);
+  const [segmentResult, setSegmentResult] = useState<any>(null);
+  const [refetchHospitalDetails, setRefetchHospitalDetails] = useState(false);
   
   const sampleData = [
     {imageUrl: "https://firebasestorage.googleapis.com/v0/b/chatwithpdf-30e42.appspot.com/o/images%2F1724335515486.jpg?alt=media&token=3b886b80-3815-4146-b548-1d3dd27e4643"},
@@ -61,6 +67,39 @@ export default function Home() {
   // refs
   const expandRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null); // Create a ref for the file input
+
+  // on first sign up we will save the hospital details to firestore
+  useEffect(() => {
+    if (isSignedIn && user) {
+      const hId = user.id;
+      setHospitalId(hId);
+      // save hospital details
+      registerHospital();
+      // fetch hospital details
+      // fetchHospitalDetails();
+    }
+  }, [isSignedIn, user]);
+
+  // register hospital to firestore
+  const registerHospital = async () => {
+    try {
+      const hospitalRef = await addDoc(collection(firestore, 'hospitals'), {
+        id: hospitalId,
+        name: '',
+        department: '',
+        address: '',
+        phone: '',
+        email: user?.emailAddresses,
+      });
+      console.log('Hospital registered with ID:', hospitalId);
+      triggerNotification('Hospital registered successfully', 'success');
+    } catch (error) {
+      console.error('Error registering hospital:', error);
+      triggerNotification('An error occurred while registering hospital', 'error');
+    } finally {
+      setRefetchHospitalDetails(true);
+    }
+  }
 
   // Close the expanded image if clicked outside
   useEffect(() => {
@@ -112,22 +151,31 @@ export default function Home() {
     setShowReportView(true);
   }
 
-  const proceedWithScans = () => {
-    setIsAddingScanAndPatient(true);
-    // upload scans to firebase storage
-    uploadScansToFirebaseStorage();
-    // save patient details to firestore
-    savePatientDetails();
-    // save observation to firestore
+  const proceedWithScans = async () => {
+    setShowUploadImageView(false);
+    setShowExpandedConclusion(true);
+    const infos = await handleSegmentScans();
+    await uploadScansToFirebaseStorage();
+    if (scanUrls.length === 0) {
+      triggerNotification('Something went wrong on setScanUrls state', 'error');
+      setIsSavingObservation(false);
+      return
+    }
+    console.log("segmented scans", infos);
+    if (infos) {
+      handleGenerateConclusion(infos);
+    }
   }
 
   // generate conclusion
-  const handleGenerateConclusion = async () => {
+  const handleGenerateConclusion = async ({ segmentedData } : { segmentedData: any}) => {
     setIsGeneratingConclusion(true);
+    triggerNotification('Generating conclusion...', 'info');
     try {
       const result = await fetch('/api/generate', {
         method: 'POST',
         headers: { origin: 'http://localhost:3000' },
+        body: JSON.stringify(segmentedData),
       })
       const resultJson = await result.json()
       
@@ -140,18 +188,51 @@ export default function Home() {
         console.log(resultJson)
         setConclusion(resultJson)
         triggerNotification('Conclusion generated successfully', 'success')
+        return true;
       }
     } catch (error) {
       console.error(error)
       triggerNotification('An error occurred', 'error')
     } finally {
       setIsGeneratingConclusion(false)
+      return false;
+    }
+  };
+
+  // segment brain mri scans
+  const handleSegmentScans = async () => {
+    setIsSegmentingScans(true);
+    triggerNotification('Segmenting scans...', 'info');
+    try {
+      const result = await fetch('/api/segment', {
+        method: 'POST',
+        headers: { origin: 'http://localhost:3000' },
+      })
+      const resultJson = await result.json()
+      
+      const {error} = resultJson
+      
+      if (error) {
+        console.warn(error.message)
+        triggerNotification(error.message, 'error')
+      } else {
+        console.log(resultJson)
+        triggerNotification('Scans segmented successfully', 'success')
+        setSegmentResult(resultJson)
+        return resultJson
+      }
+    } catch (error) {
+      console.error(error)
+      triggerNotification('An error occurred', 'error')
+    } finally {
+      setIsSegmentingScans(false)
     }
   };
   
   // upload image file(s) to firebase storage and return the download url(s)
   const uploadScansToFirebaseStorage = async () => {
     setIsUploadingScans(true);
+    triggerNotification('Uploading scans...', 'info');
     try {
       const uploadPromises = droppedFiles.map(async (file: File) => {
         const storageRef = ref(storage, `images/${file.name}`);
@@ -185,12 +266,14 @@ export default function Home() {
   // }
   // save observation to firestore
   const saveObservation = async () => {
+    setIsSavingObservation(true);
+    triggerNotification('Saving observation...', 'info');
     try {
       const observationRef = await addDoc(collection(firestore, 'hospitals', hospitalId, 'observations'), {
-        patientId,
+        patientId: patientId,
         imageUrls: scanUrls,
-        conclusionText: "",
-        radiologistName: "",
+        conclusionText: conclusion,
+        radiologistName: radiologistName,
         headDoctorName: "",
         reportUrl: '',
         status: 'pending',
@@ -199,9 +282,13 @@ export default function Home() {
       });
       console.log('Observation saved with ID:', observationRef.id);
       triggerNotification('Observation saved successfully', 'success');
+      return true;
     } catch (error) {
       console.error('Error saving observation:', error);
       triggerNotification('An error occurred while saving observation', 'error');
+    } finally {
+      setIsSavingObservation(false);
+      return false;
     }
   };
 //   export interface PatientObservation {
@@ -261,6 +348,8 @@ export default function Home() {
 
   // fetch observation by id
   const fetchObservationById = async (observationId: string): Promise<void> => {
+    setIsFetchingObservationById(true);
+    triggerNotification('Fetching observation...', 'info');
     try {
       const observationRef = doc(firestore, 'hospitals', hospitalId, 'observations', observationId);
       const observationSnapshot = await getDoc(observationRef);
@@ -303,6 +392,8 @@ export default function Home() {
     } catch (error) {
       console.error('Error fetching observation:', error);
       triggerNotification('An error occurred while fetching observation', 'error');
+    } finally {
+      setIsFetchingObservationById(false);
     }
   };
 
@@ -334,7 +425,7 @@ export default function Home() {
   useEffect(() => {
     // fetchAllObservations();
     fetchDefaultViewObservations();
-  }, []); // Make sure to include hospitalId in the dependency array
+  }, [refetch]); // Make sure to include hospitalId in the dependency array
 
   // export interface Patient {
   //     id: string;
@@ -344,6 +435,7 @@ export default function Home() {
   // }
   // save user details to firestore under hospital collection with hospital id. patient id should be generated document id keep phone number empty if not provided
   const savePatientDetails = async () => {
+    setSavingPatientDetails(true);
     try {
       const patientRef = await addDoc(collection(firestore, 'hospitals', hospitalId, 'patients'), {
         name: patientName,
@@ -356,6 +448,8 @@ export default function Home() {
     } catch (error) {
       console.error('Error saving patient details:', error);
       triggerNotification('An error occurred while saving patient details', 'error');
+    } finally {
+      setSavingPatientDetails(false);
     }
   };
 
@@ -408,7 +502,7 @@ export default function Home() {
 
   useEffect(() => {
     fetchHospitalDetails();
-  }, [hospitalId]); // Make sure to include hospitalId in the dependency array
+  }, [refetchHospitalDetails]); // Make sure to include hospitalId in the dependency array
 
   // share report
   const shareReport = () => {};
@@ -441,14 +535,18 @@ export default function Home() {
 
         {/* Image */}
         <div className="flex items-center justify-center w-full">
-          <Image
-            priority={true}
-            src={images[currentIndex].imageUrl}
-            alt={`Observation Image ${currentIndex + 1}`}
-            width={500}  // Adjust the width as needed
-            height={300} // Adjust the height as needed
-            className="rounded"
-          />
+          {isSegmentingScans 
+            ? loader()
+            :
+              <Image
+              priority={true}
+              src={images[currentIndex]}
+              alt={`Observation Image ${currentIndex + 1}`}
+              width={500}  // Adjust the width as needed
+              height={300} // Adjust the height as needed
+              className="rounded"
+            />
+          }
         </div>
 
         {/* Right Arrow */}
@@ -467,14 +565,14 @@ export default function Home() {
     return (
       <div className="flex flex-col items-center justify-center block">
         <div className="flex flex-row flex-wrap gap-8 items-center justify-center">
-            {sampleData.map((obs, index) => (
+            {defaultViewObservations.map((obs, index) => (
               <div key={obs.imageUrl+index} className="flex flex-col justify-between gap-2">
                 {/* show frist image */}
                 <div className="flex items-center justify-center p-2 border border-[#a1a1aa] rounded-md">
                   <Image
                     priority={true}
-                    src={sampleData[0].imageUrl}
-                    alt={`Observation Image ${sampleData[0].imageUrl}`}
+                    src={obs.imageUrl}
+                    alt={`Observation Image ${index + 1}`}
                     width={300}  // Adjust the width as needed
                     height={300} // Adjust the height as needed
                     className="rounded"
@@ -485,8 +583,7 @@ export default function Home() {
                 onClick={() => {
                   // setExpandObservationIndex(obs.id);
                   setShowExpandedObservation(!showExpandedObservation);
-                  // setIsFetchingObservationById(true);
-                  // fetchObservationById(obs.id);
+                  fetchObservationById(obs.id);
                 }} 
                 className={`bg-[#0c4a6e] text-black p-2 rounded-md w-full font-bold hover:bg-[#0369a1]`}>
                 {!isFetchingObservationById 
@@ -505,7 +602,7 @@ export default function Home() {
   const ExpandedObservationView = () => {
     return (
       <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-80 z-40">
-      <div ref={expandRef} className="w-[90%] bg-[#2e2e2e] rounded-md">
+      <div className="w-[90%] bg-[#2e2e2e] rounded-md">
         {/* header */}
         <div className="flex flex-row justify-between border-b border-[#a1a1aa] p-4">
           <p className="text-md">Observation details</p>
@@ -521,7 +618,7 @@ export default function Home() {
         <div className="flex flex-row p-4 gap-4 items-center justify-between">
           {/* show images as slider*/}
           <div className="w-1/2">
-            <ImageSlider images={sampleData} />
+            <ImageSlider images={oneObservation} />
           </div>
           <div className="w-1/2">
             {/* show conclusion */}
@@ -529,9 +626,9 @@ export default function Home() {
                 <p className="text-md">Conclusion</p>
                 <textarea
                   disabled={true}
-                  value="MRI signs of vascular encephalopathy with the presence of multiple ischemic foci and atrophy of the frontotemporal areas on both sides. Left maxillary sinus cyst.\n\nConsultation with a neurologist is recommended.\nConsultation with an otolaryngologist is recommended."
+                  value={oneObservation?.conclusionText || ''}
                   autoComplete="off"
-                  id="conclusion"
+                  id="conclusion1"
                   className="mt-2 placeholder:text-[#aaaaaa] placeholder:text-sm w-full px-4 py-3 text-white bg-transparent rounded border border-[#a1a1aa] focus:outline-none focus:border-white resize-none"
                   rows={4} // Specify the number of rows (height) of the textarea
                 />
@@ -545,10 +642,10 @@ export default function Home() {
                     <p className="text-xs text-[#a1a1aa] block font-bold">Radiologist</p>
                     <input
                       disabled={true}
-                      value="Dr. Nigora"
+                      value={oneObservation?.radiologistName || ''}
                       autoComplete="off"
                         type="text"
-                        id="patient-id"
+                        id="radiologistName1"
                         placeholder="Enter your Patient ID"
                         className="w-2/3 mt-2 placeholder:text-[#aaaaaa] placeholder:text-sm w-full px-4 py-3 text-white text-sm bg-transparent rounded border border-[#a1a1aa] focus:outline-none focus:border-white"
                       />
@@ -557,10 +654,10 @@ export default function Home() {
                     <p className="text-xs text-[#a1a1aa] block font-bold">Head Doctor:</p>
                     <input
                       disabled={true}
-                      value="Dr. Nigora"
+                      value={oneObservation?.headDoctorName || ''}
                       autoComplete="off"
                         type="text"
-                        id="patient-id"
+                        id="headDoctorName1"
                         placeholder="Enter your Patient ID"
                         className="w-2/3 mt-2 placeholder:text-[#aaaaaa] placeholder:text-sm w-full px-4 py-3 text-white text-sm bg-transparent rounded border border-[#a1a1aa] focus:outline-none focus:border-white"
                       />
@@ -575,10 +672,10 @@ export default function Home() {
                   <p className="text-xs text-[#a1a1aa] block font-bold">Full Name:</p>
                   <input
                       disabled={true}
-                      value="Ibrohim Abdivokhidov"
+                      value={oneObservation?.patientDetails.name || ''}
                       autoComplete="off"
                         type="text"
-                        id="patient-id"
+                        id="fullName1"
                         placeholder="Enter your Patient ID"
                         className="w-2/3 mt-2 placeholder:text-[#aaaaaa] placeholder:text-sm w-full px-4 py-3 text-sm text-white bg-transparent rounded border border-[#a1a1aa] focus:outline-none focus:border-white"
                       />
@@ -587,10 +684,10 @@ export default function Home() {
                   <p className="text-xs text-[#a1a1aa] block font-bold">Birth Year:</p>
                   <input
                     disabled={true}
-                    value="2003"
+                    value={oneObservation?.patientDetails.birthYear || ''}
                     autoComplete="off"
                       type="text"
-                      id="patient-id"
+                      id="birthYear1"
                       placeholder="Enter your Patient ID"
                       className="w-2/3 mt-2 placeholder:text-[#aaaaaa] placeholder:text-sm w-full px-4 py-3 text-sm text-white bg-transparent rounded border border-[#a1a1aa] focus:outline-none focus:border-white"
                     />
@@ -599,10 +696,10 @@ export default function Home() {
                   <p className="text-xs text-[#a1a1aa] block font-bold">Phone Number:</p>
                   <input
                     disabled={true}
-                    value="+998938966698"
+                    value={oneObservation?.patientDetails.phoneNumber || ''}
                     autoComplete="off"
                       type="text"
-                      id="patient-id"
+                      id="phoneNumber1"
                       placeholder="Enter your Patient ID"
                       className="w-2/3 mt-2 placeholder:text-[#aaaaaa] placeholder:text-sm w-full px-4 py-3 text-sm text-white bg-transparent rounded border border-[#a1a1aa] focus:outline-none focus:border-white"
                     />
@@ -613,19 +710,23 @@ export default function Home() {
             {/* show action buttons */}
             <div className="flex flex-row gap-4 mt-[60px]"> 
               <button 
-                    disabled={isUploadingScans}
-                  onClick={() => {}} 
+                    disabled={isApprovingObservation || isDeletingObservation}
+                  onClick={() => {
+                    handleDeleteObservation();
+                  }} 
                   className={`bg-[#7f1d1d] text-black p-2 rounded-md w-full font-bold hover:bg-[#b91c1c]`}>
-                  {!isUploadingScans 
+                  {!isApprovingObservation || !isDeletingObservation
                     ? <span className='flex justify-center items-center text-white'>Delete</span>
                     : <span className='flex justify-center items-center text-white'>{loader()}</span>
                   }
                 </button>
               <button 
-                    disabled={isUploadingScans}
-                  onClick={() => {}} 
+                    disabled={isApprovingObservation || isDeletingObservation}
+                  onClick={() => {
+                    handleApproveObservation();
+                  }} 
                   className={`bg-[#134e4a] text-black p-2 rounded-md w-full font-bold hover:bg-[#0f766e]`}>
-                  {!isUploadingScans 
+                  {!isApprovingObservation || !isDeletingObservation
                     ? <span className='flex justify-center items-center text-white'>Approve</span>
                     : <span className='flex justify-center items-center text-white'>{loader()}</span>
                   }
@@ -638,11 +739,75 @@ export default function Home() {
     );
   };
 
+  const handleApproveObservation = async () => {
+    setIsApprovingObservation(true);
+    console.log('approving observation');
+    // delay for 2 seconds
+    setTimeout(() => {
+      setIsApprovingObservation(false);
+    }, 2000);
+  };
+
+  const handleDeleteObservation = async () => {
+    setIsDeletingObservation(true);
+    console.log('deleting observation');
+    // delay for 2 seconds
+    setTimeout(() => {
+      setIsDeletingObservation(false);
+    }, 2000);
+  };
+
+  const handleRegenerateConclusion = async () => {
+    setIsRegeneratingConclusion(true);
+    console.log('regenerating conclusion');
+    await handleGenerateConclusion(segmentResult);
+    setIsRegeneratingConclusion(false);
+  };
+  
+  const handleSaveObservation = async () => {
+    // setIsAddingScanAndPatient(true);
+    setIsSavingObservation(true);
+    
+    // TODO: need to check again
+    // // upload scans to firebase storage
+    // await uploadScansToFirebaseStorage();
+    // if (scanUrls.length === 0) {
+    //   triggerNotification('Something went wrong on setScanUrls state', 'error');
+    //   setIsSavingObservation(false);
+    //   return
+    // }
+
+    // save patient details to firestore
+    await savePatientDetails();
+    if (patientId === '') {
+      triggerNotification('Something went wrong on patientId state', 'error');
+      setIsSavingObservation(false);
+      return
+    }
+    // save observation to firestore
+    if (await saveObservation()) {
+        setIsSavingObservation(false);
+        setShowExpandedConclusion(false);
+        setShowPortalView(true);
+        // re-fetch all observations
+        setRefetch(!refetch);
+        // initiliaze all states
+        console.log("all states are initialized");
+        setPatientName('');
+        setPatientBirthYear('');
+        setPatientPhoneNumber('');
+        setScanUrls([]);
+        setPatientId('');
+        setConclusion('');
+        setRadiologistName('');
+    }
+  };
+
   // show expanded conclusion
   const ExpandedConclusionView = () => {
     return (
       <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-80 z-40">
-      <div ref={expandRef} className="w-[90%] bg-[#2e2e2e] rounded-md">
+      <div className="w-[90%] bg-[#2e2e2e] rounded-md">
         {/* header */}
         <div className="flex flex-row justify-between border-b border-[#a1a1aa] p-4">
           <p className="text-md">Generated conclusion</p>
@@ -658,13 +823,13 @@ export default function Home() {
         <div className="flex flex-row p-4 gap-4 items-center justify-between">
           {/* show images as slider*/}
           <div className="w-1/2">
-            <ImageSlider images={sampleData} />
+            <ImageSlider images={scanUrls} />
           </div>
           <div className="w-1/2">
             {/* show conclusion */}
             <div className="">
                 <p className="text-md">Conclusion</p>
-                {isGeneratingConclusion 
+                {(isGeneratingConclusion || isSegmentingScans)
                   ? loader() 
                   : (
                     <textarea
@@ -705,7 +870,7 @@ export default function Home() {
                   <p className="text-xs text-[#a1a1aa] block font-bold">Full Name:</p>
                   <input
                       disabled={true}
-                      value="Ibrohim Abdivokhidov"
+                      value={patientName}
                       autoComplete="off"
                         type="text"
                         id="fullName"
@@ -717,7 +882,7 @@ export default function Home() {
                   <p className="text-xs text-[#a1a1aa] block font-bold">Birth Year:</p>
                   <input
                     disabled={true}
-                    value="2003"
+                    value={patientBirthYear}
                     autoComplete="off"
                       type="text"
                       id="birthYear"
@@ -729,7 +894,7 @@ export default function Home() {
                   <p className="text-xs text-[#a1a1aa] block font-bold">Phone Number:</p>
                   <input
                     disabled={true}
-                    value="+998938966698"
+                    value={patientPhoneNumber}
                     autoComplete="off"
                       type="text"
                       id="phoneNumber"
@@ -743,30 +908,36 @@ export default function Home() {
             {/* show action buttons */}
             <div className="flex flex-row gap-4 mt-[60px]"> 
               <button 
-                    disabled={isRegeneratingConclusion || isDeletingObservation || isSavingObservation}
-                  onClick={() => {}} 
+                    disabled={isRegeneratingConclusion || isDeletingObservation || isSavingObservation || isSegmentingScans}
+                  onClick={() => {
+                    handleDeleteObservation();
+                  }} 
                   className={`bg-[#7f1d1d] text-black p-2 rounded-md w-full font-bold hover:bg-[#b91c1c]`}>
-                  {(!isRegeneratingConclusion || !isDeletingObservation || !isSavingObservation)
+                  {(!isRegeneratingConclusion || !isDeletingObservation || !isSavingObservation || !isSegmentingScans)
                     ? <span className='flex justify-center items-center text-white'>Delete</span>
                     : <span className='flex justify-center items-center text-white'>{loader()}</span>
                   }
                 </button>
               <button 
-                    disabled={isRegeneratingConclusion || isDeletingObservation || isSavingObservation}
-                  onClick={() => {}} 
+                    disabled={isRegeneratingConclusion || isDeletingObservation || isSavingObservation || isSegmentingScans}
+                  onClick={() => {
+                    handleRegenerateConclusion();
+                  }} 
                   className={`bg-[#0c4a6e] text-black p-2 rounded-md w-full font-bold hover:bg-[#0369a1]`}>
-                  {(!isRegeneratingConclusion || !isDeletingObservation || !isSavingObservation)
+                  {(!isRegeneratingConclusion || !isDeletingObservation || !isSavingObservation || !isSegmentingScans)
                     ? <span className='flex justify-center items-center text-white'>Regenerate</span>
                     : <span className='flex justify-center items-center text-white'>{loader()}</span>
                   }
                 </button>
               <button 
-                    disabled={isRegeneratingConclusion || isDeletingObservation || radiologistName.trim() === '' || isSavingObservation}
-                  onClick={() => {}} 
+                    disabled={isRegeneratingConclusion || isDeletingObservation || radiologistName.trim() === '' || isSavingObservation || isSegmentingScans}
+                  onClick={() => {
+                    handleSaveObservation();
+                  }} 
                   className={`bg-[#134e4a] text-black p-2 rounded-md w-full font-bold hover:bg-[#0f766e] ${
                     radiologistName.trim() === '' ? 'cursor-not-allowed' : 'cursor-pointer'
                   }`}>
-                  {(!isRegeneratingConclusion || !isDeletingObservation || !isSavingObservation)
+                  {(!isRegeneratingConclusion || !isDeletingObservation || !isSavingObservation || !isSegmentingScans)
                     ? <span className='flex justify-center items-center text-white'>Save</span>
                     : <span className='flex justify-center items-center text-white'>{loader()}</span>
                   }
@@ -894,15 +1065,12 @@ export default function Home() {
 
               {/* "Select Scan(s)" button to trigger file input */}
               <button
-                disabled={isUploadingScans || droppedFiles.length === 3}
+                disabled={droppedFiles.length === 3}
                 onClick={handleSelectScansClick} // Use the ref click handler
                 className={`bg-[#a1a1aa] text-black p-2 rounded-md w-full font-bold hover:bg-[#f4f4f5] ${
-                  isUploadingScans || droppedFiles.length === 3 ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+                  droppedFiles.length === 3 ? 'cursor-not-allowed' : 'cursor-pointer'}`}
               >
-                {!isUploadingScans 
-                  ? <span className='flex justify-center items-center text-black'>Select Scan(s)</span>
-                  : <span className='flex justify-center items-center text-black'>{loader()}</span>
-                }
+                <span className='flex justify-center items-center text-black'>Select Scan(s)</span>
               </button>
             </div>
             {/* user info */}
@@ -980,7 +1148,7 @@ export default function Home() {
               {/* Proceed */}
               <button 
                 disabled={isAddingScanAndPatient || patientName === '' || patientBirthYear === '' || droppedFiles.length === 0}
-                onClick={() => {proceedWithScans}} 
+                onClick={proceedWithScans} 
                 className={`bg-[#134e4a] text-white p-2 rounded-md w-full font-bold ${ 
                   (isAddingScanAndPatient || patientName === '' || patientBirthYear === '' || droppedFiles.length === 0) ? 'cursor-not-allowed' : 'cursor-pointer hover:bg-[#0f766e]'}`}>
                 {!isAddingScanAndPatient 
@@ -1118,10 +1286,13 @@ return (
               <DefaultView />
             </div>
             )}
+            {/* show expand conclusion view */}
+            {showExpandedConclusion && (
+              <ExpandedConclusionView />
+            )}
             {/* show expanded view */}
             {showExpandedObservation && (
-              // <ExpandedObservationView />
-              <ExpandedConclusionView />
+              <ExpandedObservationView />
             )}
           {/* on show upload image view */}
           {showUploadImageView && (
