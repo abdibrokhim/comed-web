@@ -16,15 +16,15 @@ export interface Observation {
     headDoctorName: string;
     reportUrl: string;
     status: string;
-    updatedAt: Timestamp;
-    createdAt: Timestamp;
+    updatedAt?: Timestamp;
+    createdAt?: Timestamp;
 }
 
 export interface ObservationDefaultView {
     id: string;
     imageUrl: string;
-    updatedAt: Timestamp;
-    createdAt: Timestamp;
+    updatedAt?: Timestamp;
+    createdAt?: Timestamp;
 }
 
 export interface Hospital {
@@ -46,8 +46,8 @@ export interface PatientObservation {
     headDoctorName: string;
     reportUrl: string;
     status: string;
-    updatedAt: Timestamp;
-    createdAt: Timestamp;
+    updatedAt?: Timestamp;
+    createdAt?: Timestamp;
 }
 
 export interface ShareReport {
@@ -56,5 +56,5 @@ export interface ShareReport {
     hospitalId: string;
     patientId: string;
     reportUrl: string;
-    createdAt: Timestamp;
+    createdAt?: Timestamp;
 }

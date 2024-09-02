@@ -14,7 +14,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { Patient, Observation, Hospital, PatientObservation, ObservationDefaultView } from './types';
 import Notification from './notify';
 import { NextResponse } from 'next/server'
-import { getFirestore, collection, getDocs, getDoc, setDoc, doc, deleteDoc, updateDoc, addDoc } from 'firebase/firestore';
+import { getFirestore, collection, getDocs, getDoc, setDoc, doc, deleteDoc, updateDoc, addDoc, Timestamp } from 'firebase/firestore';
 import { getStorage, ref, uploadString, getDownloadURL, uploadBytes } from 'firebase/storage';
 import { app } from './firebaseConfig';
 
@@ -63,9 +63,9 @@ export default function Home() {
   const [isUpdatingReportUrl, setIsUpdatingReportUrl] = useState(false);
   
   const sampleData = [
-    {imageUrl: "https://firebasestorage.googleapis.com/v0/b/chatwithpdf-30e42.appspot.com/o/images%2F1724335515486.jpg?alt=media&token=3b886b80-3815-4146-b548-1d3dd27e4643"},
-    {imageUrl: "https://firebasestorage.googleapis.com/v0/b/chatwithpdf-30e42.appspot.com/o/images%2F1724336411144.jpg?alt=media&token=b7cbd4c8-58ea-4e7a-8ec3-dc04440c7f2b"},
-    {imageUrl: "https://firebasestorage.googleapis.com/v0/b/chatwithpdf-30e42.appspot.com/o/images%2F1724362545562.jpg?alt=media&token=dcc805c0-b4ce-4574-adf4-c3354a90c7bc"},
+    "https://firebasestorage.googleapis.com/v0/b/chatwithpdf-30e42.appspot.com/o/images%2F1724335515486.jpg?alt=media&token=3b886b80-3815-4146-b548-1d3dd27e4643",
+    "https://firebasestorage.googleapis.com/v0/b/chatwithpdf-30e42.appspot.com/o/images%2F1724336411144.jpg?alt=media&token=b7cbd4c8-58ea-4e7a-8ec3-dc04440c7f2b",
+    "https://firebasestorage.googleapis.com/v0/b/chatwithpdf-30e42.appspot.com/o/images%2F1724362545562.jpg?alt=media&token=dcc805c0-b4ce-4574-adf4-c3354a90c7bc",
   ]
 
   // refs
@@ -76,34 +76,71 @@ export default function Home() {
   useEffect(() => {
     if (isSignedIn && user) {
       const hId = user.id;
+      console.log('hId: ', hId);
       setHospitalId(hId);
-      // save hospital details
-      registerHospital();
-      // fetch hospital details
-      // fetchHospitalDetails();
+
+      const initializeData = async () => {
+        try {
+          // Save hospital details
+          await registerHospital(hId);
+
+          // Fetch hospital details
+          await fetchHospitalDetails(hId);
+          console.log('hospital data: ', hospitalData);
+
+        } catch (error) {
+          console.error('Error during initialization:', error);
+        }
+      };
+
+      initializeData();
+      fetchDefaultViewObservations();
     }
   }, [isSignedIn, user]);
 
   // register hospital to firestore
-  const registerHospital = async () => {
+  const registerHospital = async (hId: any) => {
+    console.log('registering hospital...');
+    console.log('hospital id: ', hId);
     try {
-      const hospitalRef = await addDoc(collection(firestore, 'hospitals'), {
-        id: hospitalId,
-        name: '',
-        department: '',
-        address: '',
-        phone: '',
-        email: user?.emailAddresses,
-      });
-      console.log('Hospital registered with ID:', hospitalId);
-      triggerNotification('Hospital registered successfully', 'success');
+      if (!hId) {
+        triggerNotification('Invalid hospital ID', 'error');
+        return;
+      }
+  
+      const hospitalRef = doc(firestore, 'hospitals', hId); // Reference to the hospital document
+      const hospitalSnapshot = await getDoc(hospitalRef); // Check if the hospital already exists
+  
+      if (!hospitalSnapshot.exists()) {
+        // Hospital does not exist, create a new document
+        await setDoc(hospitalRef, {
+          name: '',
+          department: '',
+          address: '',
+          phone: '',
+          email: user?.emailAddresses[0].emailAddress,
+        });
+        console.log('Hospital registered with ID:', hId);
+        triggerNotification('Hospital registered successfully', 'success');
+      } else {
+        // Hospital already exists, update the fields
+        await updateDoc(hospitalRef, {
+          name: '', // Update fields as needed
+          department: '',
+          address: '',
+          phone: '',
+          email: user?.emailAddresses[0].emailAddress,
+        });
+        console.log('Hospital updated with ID:', hId);
+        triggerNotification('Hospital updated successfully', 'success');
+      }
     } catch (error) {
       console.error('Error registering hospital:', error);
       triggerNotification('An error occurred while registering hospital', 'error');
     } finally {
-      setRefetchHospitalDetails(true);
+      // setRefetchHospitalDetails(true); // Trigger a refetch of hospital details after registration attempt
     }
-  }
+  };
 
   // Close the expanded image if clicked outside
   useEffect(() => {
@@ -144,6 +181,7 @@ export default function Home() {
   }
 
   const handleShowPortalView = () => {
+    fetchDefaultViewObservations();
     setShowUploadImageView(false);
     setShowPortalView(true);
     setShowReportView(false);
@@ -156,30 +194,38 @@ export default function Home() {
   }
 
   const proceedWithScans = async () => {
+    console.log('proceeding with scans...');
     setShowUploadImageView(false);
     setShowExpandedConclusion(true);
     const infos = await handleSegmentScans();
-    await uploadScansToFirebaseStorage();
-    if (scanUrls.length === 0) {
-      triggerNotification('Something went wrong on setScanUrls state', 'error');
-      setIsSavingObservation(false);
-      return
+    const prcd = await uploadScansToFirebaseStorage();
+    if (prcd) {
+      if (scanUrls.length === 0) {
+        triggerNotification('Something went wrong on setScanUrls state', 'error');
+        setIsSavingObservation(false);
+        // return
+      }
+      console.log("segmented scans: ", infos);
+      if (infos) {
+        const a = handleGenerateConclusion(infos);
+        console.log('generated conclusion: ', a);
+      }
     }
-    console.log("segmented scans", infos);
-    if (infos) {
-      handleGenerateConclusion(infos);
-    }
+    console.log('done');
   }
 
   // generate conclusion
-  const handleGenerateConclusion = async ({ segmentedData } : { segmentedData: any}) => {
+  const handleGenerateConclusion = async (segmentedData: any) => {
     setIsGeneratingConclusion(true);
     triggerNotification('Generating conclusion...', 'info');
+    console.log("---------------------");
+    console.log(segmentedData);
+    console.log("---------------------");
     try {
       const result = await fetch('/api/generate', {
         method: 'POST',
         headers: { origin: 'http://localhost:3000' },
-        body: JSON.stringify(segmentedData),
+        body: JSON.stringify({prompt: segmentedData}),
       })
       const resultJson = await result.json()
       
@@ -189,17 +235,18 @@ export default function Home() {
         console.warn(error.message)
         triggerNotification(error.message, 'error')
       } else {
-        console.log(resultJson)
-        setConclusion(resultJson)
+        const stringResponse = JSON.stringify(resultJson);
+        console.log(stringResponse)
+        setConclusion(stringResponse.replace(/"/g, '').replace(/\n/g, ' '));
         triggerNotification('Conclusion generated successfully', 'success')
-        return true;
+        return stringResponse;
       }
     } catch (error) {
       console.error(error)
       triggerNotification('An error occurred', 'error')
+      return false;
     } finally {
       setIsGeneratingConclusion(false)
-      return false;
     }
   };
 
@@ -211,6 +258,7 @@ export default function Home() {
       const result = await fetch('/api/segment', {
         method: 'POST',
         headers: { origin: 'http://localhost:3000' },
+        body: JSON.stringify({ scanUrls }),
       })
       const resultJson = await result.json()
       
@@ -232,6 +280,18 @@ export default function Home() {
       setIsSegmentingScans(false)
     }
   };
+
+  // for testing purpose
+  const test = async () => {
+    console.log('testing...');
+    const s = await handleSegmentScans();
+    console.log('s: ', s);
+    if (s) {
+      const a = await handleGenerateConclusion(s);
+      console.log('a: ', a);
+    }
+    console.log('done');
+  };
   
   // upload image file(s) to firebase storage and return the download url(s)
   const uploadScansToFirebaseStorage = async () => {
@@ -248,9 +308,11 @@ export default function Home() {
       const urls: any = await Promise.all(uploadPromises); // Wait for all uploads to complete
       setScanUrls(urls); // Update the scan URLs state once all are uploaded
       triggerNotification('Scans uploaded successfully', 'success');
+      return true;
     } catch (error) {
       console.error('Error uploading files:', error); // Log the actual error for debugging
       triggerNotification('An error occurred during upload', 'error');
+      return false;
     } finally {
       setIsUploadingScans(false);
     }
@@ -269,12 +331,12 @@ export default function Home() {
   //     createdAt: Timestamp;
   // }
   // save observation to firestore
-  const saveObservation = async () => {
+  const saveObservation = async (pId: string) => {
     setIsSavingObservation(true);
     triggerNotification('Saving observation...', 'info');
     try {
       const observationRef = await addDoc(collection(firestore, 'hospitals', hospitalId, 'observations'), {
-        patientId: patientId,
+        patientId: pId,
         imageUrls: scanUrls,
         conclusionText: conclusion,
         radiologistName: radiologistName,
@@ -286,13 +348,13 @@ export default function Home() {
       });
       console.log('Observation saved with ID:', observationRef.id);
       triggerNotification('Observation saved successfully', 'success');
-      return true;
+      return observationRef.id;
     } catch (error) {
       console.error('Error saving observation:', error);
       triggerNotification('An error occurred while saving observation', 'error');
+      return false;
     } finally {
       setIsSavingObservation(false);
-      return false;
     }
   };
 //   export interface PatientObservation {
@@ -351,9 +413,10 @@ export default function Home() {
   };
 
   // fetch observation by id
-  const fetchObservationById = async (observationId: string): Promise<void> => {
+  const fetchObservationById = async (observationId: string) => {
     setIsFetchingObservationById(true);
     triggerNotification('Fetching observation...', 'info');
+  
     try {
       const observationRef = doc(firestore, 'hospitals', hospitalId, 'observations', observationId);
       const observationSnapshot = await getDoc(observationRef);
@@ -364,7 +427,26 @@ export default function Home() {
         return;
       }
   
-      const observationData = observationSnapshot.data() as Observation;
+      const data = observationSnapshot.data();
+      
+      if (!data) {
+        console.warn('Data is undefined or null');
+        triggerNotification('Failed to fetch observation data', 'error');
+        return;
+      }
+  
+      const observationData: Observation = {
+        id: observationSnapshot.id,
+        patientId: data.patientId || '',  // Ensure required fields are handled
+        imageUrls: data.imageUrls || [],
+        conclusionText: data.conclusionText || '',
+        radiologistName: data.radiologistName || '',
+        headDoctorName: data.headDoctorName || '',
+        reportUrl: data.reportUrl || '',
+        status: data.status || '',
+        updatedAt: data.updatedAt,
+        createdAt: data.createdAt,
+      };
   
       // Fetch patient details using await to ensure we get the actual patient data
       const patientDetails = await fetchPatientDetails(observationData.patientId);
@@ -389,10 +471,9 @@ export default function Home() {
         createdAt: observationData.createdAt,
       };
   
-      // Assuming you want to set the observation data to a state or handle it otherwise
       setOneObservation(observation); // Replace this with your state setter or handling logic
-  
       triggerNotification('Observation fetched successfully', 'success');
+  
     } catch (error) {
       console.error('Error fetching observation:', error);
       triggerNotification('An error occurred while fetching observation', 'error');
@@ -403,21 +484,29 @@ export default function Home() {
 
   // fetch all observations only one image url
   const fetchDefaultViewObservations = async () => {
+    console.log('fetching default view observations...');
+    console.log('hospital id: ', hospitalId);
+    
     try {
       const observationsRef = collection(firestore, 'hospitals', hospitalId, 'observations');
       const observationsSnapshot = await getDocs(observationsRef);
       const observationsData: ObservationDefaultView[] = [];
   
-      for (const doc of observationsSnapshot.docs) {
-        const observationData = doc.data() as Observation;
+      observationsSnapshot.forEach((docSnapshot) => {
+        const observationData = docSnapshot.data() as Observation;
+        
+        // Manually add the document ID from Firestore snapshot
         const observation: ObservationDefaultView = {
-          id: observationData.id,
-          imageUrl: observationData.imageUrls[0],
+          id: docSnapshot.id,  // Use docSnapshot.id to get the document ID
+          imageUrl: observationData.imageUrls ? observationData.imageUrls[0] : '', // Safely handle potential undefined
           updatedAt: observationData.updatedAt,
           createdAt: observationData.createdAt,
         };
+  
+        console.log('--- observation.id: ', observation.id);  // Correctly log the ID
+  
         observationsData.push(observation);
-      }
+      });
   
       setDefaultViewObservations(observationsData);
     } catch (error) {
@@ -449,6 +538,7 @@ export default function Home() {
       setPatientId(patientRef.id);
       console.log('Patient details saved with ID:', patientRef.id);
       triggerNotification('Patient details saved successfully', 'success');
+      return patientRef.id;
     } catch (error) {
       console.error('Error saving patient details:', error);
       triggerNotification('An error occurred while saving patient details', 'error');
@@ -458,7 +548,7 @@ export default function Home() {
   };
 
   // get patient details by patient id
-  const fetchPatientDetails = async (patientId: string): Promise<Patient | undefined> => {
+  const fetchPatientDetails = async (patientId: string) => {
     try {
       const patientRef = doc(firestore, 'hospitals', hospitalId, 'patients', patientId);
       const patientSnapshot = await getDoc(patientRef);
@@ -486,13 +576,31 @@ export default function Home() {
   //     email: string;
   // }
   // useEffect and fetch hospital details by hospital id
-  const fetchHospitalDetails = async () => {
+  const fetchHospitalDetails = async (hId: any) => {
+    console.log('fetching hospital details...');
+    console.log('hospital id: ', hId);
+
     try {
-      const hospitalRef = doc(firestore, 'hospitals', hospitalId); // Reference to the specific document
+      if (!hId) {
+        console.error('Invalid hospital ID');
+        triggerNotification('Invalid hospital ID. Cannot fetch hospital details.', 'error');
+        return;
+      }
+
+      const hospitalRef = doc(firestore, 'hospitals', hId); // Reference to the specific document
       const hospitalSnapshot = await getDoc(hospitalRef); // Fetch the document snapshot
 
       if (hospitalSnapshot.exists()) { // Check if the document exists
-        const hospitalData = hospitalSnapshot.data() as Hospital; // Get the document data and cast it to your type
+        const data = hospitalSnapshot.data() as any;
+        const hospitalData: Hospital = {
+          id: hId,
+          name: data.name,
+          department: data.department,
+          address: data.address,
+          phone: data.phone,
+          email: data.email,
+        };
+
         setHospitalData(hospitalData);
       } else {
         console.warn('No such document!');
@@ -501,11 +609,13 @@ export default function Home() {
     } catch (error) {
       console.error('Error fetching hospital details:', error);
       triggerNotification('An error occurred while fetching hospital details', 'error');
+    } finally {
+      // Any final steps
     }
   };
 
   useEffect(() => {
-    fetchHospitalDetails();
+    fetchHospitalDetails(hospitalId);
   }, [refetchHospitalDetails]); // Make sure to include hospitalId in the dependency array
 
   // share report
@@ -514,19 +624,26 @@ export default function Home() {
   };
   
   // Slider
-  const ImageSlider = ({ images } : { images: any }) => {
+  const ImageSlider = (images: any) => {
     const [currentIndex, setCurrentIndex] = useState(0);
+
+    console.log('images: ', typeof images);
+
+    // Convert to array and flatten if necessary
+    let imagesArray = Object.values(images).flat(); // Flatten the array if there are nested arrays
+    console.log('typeof imagesArray: ', typeof imagesArray);
+    console.log('imagesArray: ', imagesArray);
 
     // Function to go to the previous image
     const prevImage = () => {
-      console.log('next image');
-      setCurrentIndex((prevIndex) => (prevIndex === 0 ? images.length - 1 : prevIndex - 1));
+      console.log('previous image');
+      setCurrentIndex((prevIndex) => (prevIndex === 0 ? imagesArray.length - 1 : prevIndex - 1));
     };
 
     // Function to go to the next image
     const nextImage = () => {
       console.log('next image');
-      setCurrentIndex((prevIndex) => (prevIndex === images.length - 1 ? 0 : prevIndex + 1));
+      setCurrentIndex((prevIndex) => (prevIndex === imagesArray.length - 1 ? 0 : prevIndex + 1));
     };
 
     return (
@@ -534,31 +651,31 @@ export default function Home() {
         {/* Left Arrow */}
         <button
           onClick={prevImage}
-          className="hover:bg-[#151515] p-2 absolute left-0 ml-4 flex items-center justify-center w-8 h-8 rounded-full text-white cursor-pointer w-[24px] h-[24px] rounded-full shadow"
+          className="hover:bg-[#151515] p-2 absolute left-0 ml-4 flex items-center justify-center w-8 h-8 rounded-full text-white cursor-pointer shadow"
         >
           <FontAwesomeIcon icon={faChevronLeft} />
         </button>
 
         {/* Image */}
         <div className="flex items-center justify-center w-full">
-          {isSegmentingScans 
-            ? loader()
-            :
-              <Image
+          {isSegmentingScans || imagesArray[currentIndex] === undefined ? (
+            loader()
+          ) : (
+            <Image
               priority={true}
-              src={images[currentIndex].imageUrl}
+              src={imagesArray[currentIndex] || ''}
               alt={`Observation Image ${currentIndex + 1}`}
               width={500}  // Adjust the width as needed
               height={300} // Adjust the height as needed
               className="rounded"
             />
-          }
+          )}
         </div>
 
         {/* Right Arrow */}
         <button
           onClick={nextImage}
-          className="hover:bg-[#151515] p-2 absolute right-0 mr-4 flex items-center justify-center w-8 h-8 rounded-full text-white cursor-pointer w-[24px] h-[24px] rounded-full shadow"
+          className="hover:bg-[#151515] p-2 absolute right-0 mr-4 flex items-center justify-center w-8 h-8 rounded-full text-white cursor-pointer shadow"
         >
           <FontAwesomeIcon icon={faChevronRight} />
         </button>
@@ -572,7 +689,7 @@ export default function Home() {
       <div className="flex flex-col items-center justify-center block">
         <div className="flex flex-row flex-wrap gap-8 items-center justify-center">
             {defaultViewObservations.map((obs, index) => (
-              <div key={obs.imageUrl+index} className="flex flex-col justify-between gap-2">
+              <div key={obs.id} className="flex flex-col justify-between gap-2">
                 {/* show frist image */}
                 <div className="flex items-center justify-center p-2 border border-[#a1a1aa] rounded-md">
                   <Image
@@ -588,6 +705,7 @@ export default function Home() {
                 disabled={isFetchingObservationById}
                 onClick={() => {
                   // setExpandObservationIndex(obs.id);
+                  console.log('fetching observation by id: ', obs.id);
                   fetchObservationById(obs.id);
                   setShowExpandedObservation(!showExpandedObservation);
                 }} 
@@ -624,7 +742,7 @@ export default function Home() {
         <div className="flex flex-row p-4 gap-4 items-center justify-between">
           {/* show images as slider*/}
           <div className="w-1/2">
-            <ImageSlider images={oneObservation} />
+            <ImageSlider images={oneObservation?.imageUrls} />
           </div>
           <div className="w-1/2">
             {/* show conclusion */}
@@ -869,17 +987,13 @@ export default function Home() {
     // }
 
     // save patient details to firestore
-    await savePatientDetails();
-    if (patientId === '') {
-      triggerNotification('Something went wrong on patientId state', 'error');
-      setIsSavingObservation(false);
-      return
-    }
-    // save observation to firestore
-    if (await saveObservation()) {
+    const pId = await savePatientDetails();
+    if (pId) {
+      // save observation to firestore
+      const oId = await saveObservation(pId);
+      if (oId) {
         setIsSavingObservation(false);
         setShowExpandedConclusion(false);
-        setShowPortalView(true);
         // re-fetch all observations
         setRefetch(!refetch);
         // initiliaze all states
@@ -891,6 +1005,13 @@ export default function Home() {
         setPatientId('');
         setConclusion('');
         setRadiologistName('');
+
+        setShowPortalView(true);
+      } else {
+        triggerNotification('Something went wrong on saveObservation state', 'error');
+        setIsSavingObservation(false);
+        return
+      }
     }
   };
 
@@ -1260,13 +1381,13 @@ return (
       <div className="flex flex-col items-center justify-center block">
         <div className="flex flex-row flex-wrap gap-8 items-center justify-start">
             {sampleData.map((obs, index) => (
-              <div key={obs.imageUrl} className="flex flex-col justify-between gap-2">
+              <div key={obs[index]} className="flex flex-col justify-between gap-2">
                 {/* show report pdf preview */}
                 <div className="flex items-center justify-center p-2 border border-[#a1a1aa] rounded-md">
                   <Image
                   priority={true}
-                    src={sampleData[0].imageUrl}
-                    alt={`Observation Image ${sampleData[0].imageUrl}`}
+                    src={sampleData[0]}
+                    alt={`Observation Image ${sampleData[0]}`}
                     width={300}  // Adjust the width as needed
                     height={300} // Adjust the height as needed
                     className="rounded"
