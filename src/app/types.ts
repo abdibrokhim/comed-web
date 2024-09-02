@@ -49,3 +49,12 @@ export interface PatientObservation {
     updatedAt: Timestamp;
     createdAt: Timestamp;
 }
+
+export interface ShareReport {
+    id: string;
+    observationId: string;
+    hospitalId: string;
+    patientId: string;
+    reportUrl: string;
+    createdAt: Timestamp;
+}

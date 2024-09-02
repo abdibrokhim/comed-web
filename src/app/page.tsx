@@ -57,6 +57,10 @@ export default function Home() {
   const [refetch, setRefetch] = useState(false);
   const [segmentResult, setSegmentResult] = useState<any>(null);
   const [refetchHospitalDetails, setRefetchHospitalDetails] = useState(false);
+  const [refetchOneObservation, setRefetchOneObservation] = useState(false);
+  const [generatingReport, setGeneratingReport] = useState(false);
+  const [isUploadingReport, setIsUploadingReport] = useState(false);
+  const [isUpdatingReportUrl, setIsUpdatingReportUrl] = useState(false);
   
   const sampleData = [
     {imageUrl: "https://firebasestorage.googleapis.com/v0/b/chatwithpdf-30e42.appspot.com/o/images%2F1724335515486.jpg?alt=media&token=3b886b80-3815-4146-b548-1d3dd27e4643"},
@@ -505,7 +509,9 @@ export default function Home() {
   }, [refetchHospitalDetails]); // Make sure to include hospitalId in the dependency array
 
   // share report
-  const shareReport = () => {};
+  const shareReport = () => {
+    console.log('share report');
+  };
   
   // Slider
   const ImageSlider = ({ images } : { images: any }) => {
@@ -540,7 +546,7 @@ export default function Home() {
             :
               <Image
               priority={true}
-              src={images[currentIndex]}
+              src={images[currentIndex].imageUrl}
               alt={`Observation Image ${currentIndex + 1}`}
               width={500}  // Adjust the width as needed
               height={300} // Adjust the height as needed
@@ -582,8 +588,8 @@ export default function Home() {
                 disabled={isFetchingObservationById}
                 onClick={() => {
                   // setExpandObservationIndex(obs.id);
-                  setShowExpandedObservation(!showExpandedObservation);
                   fetchObservationById(obs.id);
+                  setShowExpandedObservation(!showExpandedObservation);
                 }} 
                 className={`bg-[#0c4a6e] text-black p-2 rounded-md w-full font-bold hover:bg-[#0369a1]`}>
                 {!isFetchingObservationById 
@@ -710,24 +716,30 @@ export default function Home() {
             {/* show action buttons */}
             <div className="flex flex-row gap-4 mt-[60px]"> 
               <button 
-                    disabled={isApprovingObservation || isDeletingObservation}
+                    disabled={isApprovingObservation || isDeletingObservation || isUpdatingReportUrl || isUploadingReport || generatingReport}
                   onClick={() => {
                     handleDeleteObservation();
                   }} 
                   className={`bg-[#7f1d1d] text-black p-2 rounded-md w-full font-bold hover:bg-[#b91c1c]`}>
-                  {!isApprovingObservation || !isDeletingObservation
+                  {!isApprovingObservation || !isDeletingObservation || !isUpdatingReportUrl || !isUploadingReport || !generatingReport
                     ? <span className='flex justify-center items-center text-white'>Delete</span>
                     : <span className='flex justify-center items-center text-white'>{loader()}</span>
                   }
                 </button>
               <button 
-                    disabled={isApprovingObservation || isDeletingObservation}
-                  onClick={() => {
-                    handleApproveObservation();
-                  }} 
+                    disabled={isApprovingObservation || isDeletingObservation || oneObservation?.status === "approved" || isUpdatingReportUrl || isUploadingReport || generatingReport}
+                  onClick={ async () => {
+                    if (await handleApproveObservation()) {
+                      if (await handleGenerateReport()) {
+                        if (await uploadReportToFirebaseStorage()) {
+                          updateObservationReportUrl();
+                        }
+                      }
+                    }
+                  }}
                   className={`bg-[#134e4a] text-black p-2 rounded-md w-full font-bold hover:bg-[#0f766e]`}>
-                  {!isApprovingObservation || !isDeletingObservation
-                    ? <span className='flex justify-center items-center text-white'>Approve</span>
+                  {!isApprovingObservation || !isDeletingObservation || !isUpdatingReportUrl || !isUploadingReport || !generatingReport
+                    ? <span className='flex justify-center items-center text-white'>{oneObservation?.status === "approved" ? "Approved" : "Approve"}</span>
                     : <span className='flex justify-center items-center text-white'>{loader()}</span>
                   }
                 </button>
@@ -739,22 +751,101 @@ export default function Home() {
     );
   };
 
+  // update observation reportUrl in firestore
+  const updateObservationReportUrl = async () => {
+    setIsUpdatingReportUrl(true);
+    console.log('updating report url');
+    triggerNotification('Updating report URL...', 'info');
+    try {
+      // TODO: implement report url update function
+      triggerNotification('Report URL updated successfully', 'success');
+      return true;
+    } catch (error) {
+      console.error('Error updating report URL:', error);
+      triggerNotification('An error occurred while updating report URL', 'error');
+    } finally {
+      setIsUpdatingReportUrl(false);
+      setRefetchOneObservation(!refetchOneObservation);
+    }
+  };
+
+  // upload report to firebase storage. report will be in PDF format always
+  const uploadReportToFirebaseStorage = async () => {
+    setIsUploadingReport(true);
+    console.log('uploading report');
+    triggerNotification('Uploading report...', 'info');
+    try {
+      // TODO: implement report upload function
+      const dUrl = '';
+      triggerNotification('Report uploaded successfully', 'success');
+      return dUrl;
+    } catch (error) {
+      console.error('Error uploading report:', error);
+      triggerNotification('An error occurred while uploading report', 'error');
+    } finally {
+      setIsUploadingReport(false);
+    }
+  };
+
+  // generate report
+  const handleGenerateReport = async () => {
+    setGeneratingReport(true);
+    console.log('generating report');
+    triggerNotification('Generating report...', 'info');
+    try {
+      // TODO: implement pdf generator function
+      triggerNotification('Report generated successfully. You can see it in the report section', 'success');
+      return true;
+    } catch (error) {
+      console.error('Error generating report:', error);
+      triggerNotification('An error occurred while generating report', 'error');
+    } finally {
+      setGeneratingReport(false);
+    }
+  };
+
   const handleApproveObservation = async () => {
     setIsApprovingObservation(true);
     console.log('approving observation');
-    // delay for 2 seconds
-    setTimeout(() => {
+    triggerNotification('Approving observation...', 'info');
+    // update observation status to approved in firestore
+    try {
+      const observationRef = doc(firestore, 'hospitals', hospitalId, 'observations', oneObservation?.id!);
+      await updateDoc(observationRef, {
+        status: 'approved',
+      });
+      triggerNotification('Observation approved successfully', 'success');
+      return true;
+    } catch (error) {
+      console.error('Error approving observation:', error);
+      triggerNotification('An error occurred while approving observation', 'error');
+    } finally {
       setIsApprovingObservation(false);
-    }, 2000);
+    }
   };
+
+  useEffect(() => {
+    fetchObservationById(oneObservation?.id!);
+  }, [refetchOneObservation]);
 
   const handleDeleteObservation = async () => {
     setIsDeletingObservation(true);
     console.log('deleting observation');
-    // delay for 2 seconds
-    setTimeout(() => {
+    triggerNotification('Deleting observation...', 'info');
+    // delete observation from firestore
+    try {
+      const observationRef = doc(firestore, 'hospitals', hospitalId, 'observations', oneObservation?.id!);
+      await deleteDoc(observationRef);
+      triggerNotification('Observation deleted successfully', 'success');
+    } catch (error) {
+      console.error('Error deleting observation:', error);
+      triggerNotification('An error occurred while deleting observation', 'error');
+    } finally {
       setIsDeletingObservation(false);
-    }, 2000);
+      setShowExpandedObservation(false);
+      // initiliaze specific observation state
+      setOneObservation(null);
+    }
   };
 
   const handleRegenerateConclusion = async () => {
@@ -1185,10 +1276,8 @@ return (
                   <button 
                     disabled={isFetchingObservationById}
                     onClick={() => {
-                      // setExpandObservationIndex(obs.id);
-                      setShowExpandedObservation(!showExpandedObservation);
-                      // setIsFetchingObservationById(true);
                       // fetchObservationById(obs.id);
+                      setShowExpandedObservation(!showExpandedObservation);
                     }} 
                     className={`bg-[#0c4a6e] text-black p-2 rounded-md w-full font-bold hover:bg-[#0369a1]`}>
                     {!isFetchingObservationById 
