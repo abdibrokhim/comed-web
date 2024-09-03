@@ -40,6 +40,7 @@ export interface PatientObservation {
     id: string;
     patientId: string;
     patientDetails: Patient;
+    hospitalDetails: Hospital;
     imageUrls: [string];
     conclusionText: string;
     radiologistName: string;
