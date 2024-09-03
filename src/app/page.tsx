@@ -9,7 +9,7 @@ import {
   useUser,
 } from '@clerk/nextjs'
 import React, { useCallback, useEffect, useState, useRef, memo } from 'react';
-import { faAdd, faChevronDown, faClose, faFile, faChevronLeft, faChevronRight, faCompass, faShare, faPrint, faUpRightAndDownLeftFromCenter, faExpand, faSquareCheck, faTrash, faCircleCheck, faClone, faPenNib, faSquareMinus, faMinus } from '@fortawesome/free-solid-svg-icons';
+import { faAdd, faChevronDown, faClose, faFile, faChevronLeft, faChevronRight, faCompass, faShare, faPrint, faUpRightAndDownLeftFromCenter, faExpand, faSquareCheck, faTrash, faCircleCheck, faClone, faPenNib, faSquareMinus, faMinus, faCircleInfo } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { Patient, Observation, Hospital, PatientObservation, ObservationDefaultView, ShareReport } from './types';
 import Notification from './notify';
@@ -19,7 +19,6 @@ import ReactPDF from "@react-pdf/renderer"
 import { getFirestore, collection, getDocs, getDoc, setDoc, doc, deleteDoc, updateDoc, addDoc, Timestamp } from 'firebase/firestore';
 import { getStorage, ref, uploadString, getDownloadURL, uploadBytes } from 'firebase/storage';
 import { app } from './firebaseConfig';
-// import PDFPreview from './pdfpreview';
 import { cn, downloadUrl } from './lib/utils';
 
 const storage = getStorage(app);
@@ -67,6 +66,12 @@ export default function Home() {
   const [isUpdatingReportUrl, setIsUpdatingReportUrl] = useState(false);
   const [reportViewData, setReportViewData] = useState<ShareReport | null>(null);
   const [headDoctorName, setHeadDoctorName] = useState('');
+  const [showHospitalDetailsView, setShowHospitalDetailsView] = useState(false);
+  const [isSavingHospitalDetails, setIsSavingHospitalDetails] = useState(false);
+  const [hFullName, setHFullName] = useState('');
+  const [hDepartment, setHDepartment] = useState('');
+  const [hAddress, setHAddress] = useState('');
+  const [hPhone, setHPhone] = useState('');
   
   // for testing purposes
   const sampleData = [
@@ -87,20 +92,60 @@ export default function Home() {
       console.log('hId: ', hId);
       setHospitalId(hId);
 
+      // check whether the all fields in hospital details are filled or not fetch the hospital details from firestore
+      // if not call setHospitalDetailsView to true and show the hospital details view
+      // on submit register the hospital to firestore
+      // otherwise fetch the hospital details from firestore
+
       const initializeData = async () => {
         try {
           // Save hospital details
-          await registerHospital(hId);
-
+          // await registerHospital(hId);
           // Fetch hospital details
-          await fetchHospitalDetails(hId);
-          console.log('hospital data: ', hospitalData);
-
+          const hD = await fetchHospitalDetails(hId);
+          console.log('initializeData() hospital data: ', hD);
         } catch (error) {
           console.error('Error during initialization:', error);
         }
       };
 
+      const runChecking = async () => {
+        console.log('checking hospital details...'); 
+        try {
+          const hD = await fetchHospitalDetails(hId);
+          console.log('fetchHosDet() hospital data: ', hD);
+
+          if (hD !== null || hD !== undefined) {
+            console.log('f.name: ', hD!.name);
+            if (hD!.name !== '' && hD!.department !== '' && hD!.address !== '' && hD!.phone !== '') {
+              console.log('hospital details already filled');
+              setShowHospitalDetailsView(false);
+            } else {
+              console.log('hospital details not filled');
+              setShowHospitalDetailsView(true);
+              // pre fill some fields
+              if (hD?.name !== '') {
+                setHFullName(hD!.name);
+              }
+              if (hD?.department !== '') {
+                setHDepartment(hD!.department);
+              }
+              if (hD?.address !== '') {
+                setHAddress(hD!.address);
+              }
+              if (hD?.phone !== '') {
+                setHPhone(hD!.phone);
+              }
+            }
+          }
+          return hD;
+        } catch (error) {
+          console.error('Error fetching hospital details:', error);
+          return null;
+        }
+      };
+
+      runChecking();
       initializeData();
       fetchDefaultViewObservations();
     }
@@ -122,10 +167,10 @@ export default function Home() {
       if (!hospitalSnapshot.exists()) {
         // Hospital does not exist, create a new document
         await setDoc(hospitalRef, {
-          name: '',
-          department: '',
-          address: '',
-          phone: '',
+          name: hFullName,
+          department: hDepartment,
+          address: hAddress,
+          phone: hPhone,
           email: user?.emailAddresses[0].emailAddress,
         });
         console.log('Hospital registered with ID:', hId);
@@ -133,10 +178,10 @@ export default function Home() {
       } else {
         // Hospital already exists, update the fields
         await updateDoc(hospitalRef, {
-          name: '', // Update fields as needed
-          department: '',
-          address: '',
-          phone: '',
+          name: hFullName,
+          department: hDepartment,
+          address: hAddress,
+          phone: hPhone,
           email: user?.emailAddresses[0].emailAddress,
         });
         console.log('Hospital updated with ID:', hId);
@@ -612,6 +657,7 @@ export default function Home() {
         };
 
         setHospitalData(hospitalData);
+        return hospitalData;
       } else {
         console.warn('No such document!');
         triggerNotification('No hospital data found for the provided ID', 'error');
@@ -1206,7 +1252,6 @@ export default function Home() {
     }
   };
 
-
   const UploadImageView = () => {
     return (
       <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-80 z-40">
@@ -1396,6 +1441,119 @@ export default function Home() {
     );
   };
 
+  const saveHospitalDetails = async () => {
+    setIsSavingHospitalDetails(true);
+    console.log('saving hospital details');
+    triggerNotification('Saving hospital details...', 'info');
+    try {
+      await registerHospital(hospitalId);
+      triggerNotification('Hospital details saved successfully', 'success');
+    } catch (error) {
+      console.error('Error saving hospital details:', error);
+      triggerNotification('An error occurred while saving hospital details', 'error');
+    } finally {
+      setIsSavingHospitalDetails(false);
+      setShowHospitalDetailsView(false);
+    }
+  };
+
+  const HospitalDetailsView = () => {
+    return (
+      <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-80 z-40">
+      <div className="w-[800px] bg-[#2e2e2e] rounded-md">
+        <div className="flex flex-row justify-between border-b border-[#a1a1aa] p-4">
+          <p className="text-md">Add hospital details</p>
+        </div>
+        <div className="p-4">
+          <div className="flex flex-row justify-start border border-[#a1a1aa] p-4 rounded-md">
+            <button
+              onClick={() => {}}
+              className={`flex items-center justify-center w-[24px] h-[24px] rounded-full shadow cursor-pointer`}>
+                <FontAwesomeIcon icon={faCircleInfo} />
+            </button>
+            <p className="text-md ml-[20px]">Make sure details are correct so it reflects in the <span className="text-md underline font-bold">report</span></p>
+          </div>
+          <div className="mt-[30px] flex flex-row justify-between gap-[40px]">
+            <div className="w-full">
+              <div className="mb-4">
+                <p className="block text-white text-xs font-bold mb-2">
+                  Hospital Name <span className="text-red-500">*</span>
+                </p>
+                <input
+                value={hFullName}
+                onChange={(e) => {
+                  console.log(e.target.value)
+                  setHFullName(e.target.value)
+                }}
+                autoComplete="off"
+                  type="text"
+                  name="hFullName"
+                  placeholder="Enter hospital name"
+                  className="placeholder:text-[#aaaaaa] placeholder:text-sm w-full px-4 py-3 text-white bg-transparent rounded border border-[#a1a1aa] focus:outline-none focus:border-white"
+                />
+              </div>
+              <div className="mb-4">
+                <p className="block text-white text-xs font-bold mb-2">
+                  Department Name <span className="text-red-500">*</span>
+                </p>
+                <input
+                value={hDepartment}
+                onChange={(e) => {setHDepartment(e.target.value)}}
+                autoComplete="off"
+                  type="text"
+                  name="hDepartment"
+                  placeholder="Enter department name"
+                  className="placeholder:text-[#aaaaaa] placeholder:text-sm w-full px-4 py-3 text-white bg-transparent rounded border border-[#a1a1aa] focus:outline-none focus:border-white"
+                />
+              </div>
+              <div className="mb-4">
+                <p className="block text-white text-xs font-bold mb-2">
+                  Full Address <span className="text-red-500">*</span>
+                </p>
+                <div className="flex items-center">
+                  <input
+                  value={hAddress}
+                  onChange={(e) => setHAddress(e.target.value)}
+                  autoComplete="off"
+                    type="text"
+                    name="hAddress"
+                    placeholder="Enter hospital address"
+                    className="placeholder:text-[#aaaaaa] placeholder:text-sm w-full px-4 py-3 text-white bg-transparent rounded border border-[#a1a1aa] focus:outline-none focus:border-white"
+                  />
+                </div>
+              </div>
+              <div className="mb-4">
+                <p className="block text-white text-xs font-bold mb-2">
+                  Phone Number <span className="text-red-500">*</span>
+                </p>
+                <input
+                value={hPhone}
+                onChange={(e) => setHPhone(e.target.value)}
+                  autoComplete="off"
+                  type="text"
+                  name="hPhone"
+                  placeholder="Enter phone number"
+                  className="placeholder:text-[#aaaaaa] placeholder:text-sm w-full px-4 py-3 text-white bg-transparent rounded border border-[#a1a1aa] focus:outline-none focus:border-white"
+                />
+              </div>
+              <button 
+                disabled={isSavingHospitalDetails || hFullName === '' || hDepartment === '' || hAddress === '' || hPhone === ''}
+                onClick={saveHospitalDetails} 
+                className={`bg-[#134e4a] text-white p-2 rounded-md w-full font-bold ${ 
+                  (isSavingHospitalDetails || hFullName === '' || hDepartment === '' || hAddress === '' || hPhone === '') ? 'cursor-not-allowed' : 'cursor-pointer hover:bg-[#0f766e]'}`}>
+                {!isAddingScanAndPatient 
+                  ? <span className='flex justify-center items-center text-white'>Submit</span>
+                  : <span className='flex justify-center items-center text-white'>{loader()}</span>
+                }
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      </div>
+    );
+  };
+
   const ReportView = () => {
 return (
       <div className="flex flex-col items-center justify-center block">
@@ -1457,47 +1615,6 @@ return (
     );
   };
 
-const studyType = "PROTOCOL OF MRI STUDY OF THE BRAIN";
-const headerNote1 = 'This report was generated by Advanced Medical Imaging System.';
-const footNote1 = 'This conclusion is not a final diagnosis and requires comparison with clinical and laboratory data.';
-const footNote2 = 'In case of typos, contact phone: +0987654321';
-
-
-// const handleGenerateConclusion = async (segmentedData: any) => {
-//   setIsGeneratingConclusion(true);
-//   triggerNotification('Generating conclusion...', 'info');
-//   console.log("---------------------");
-//   console.log(segmentedData);
-//   console.log("---------------------");
-//   try {
-//     const result = await fetch('/api/generate', {
-//       method: 'POST',
-//       headers: { origin: 'http://localhost:3000' },
-//       body: JSON.stringify({prompt: segmentedData}),
-//     })
-//     const resultJson = await result.json()
-    
-//     const {error} = resultJson
-    
-//     if (error) {
-//       console.warn(error.message)
-//       triggerNotification(error.message, 'error')
-//     } else {
-//       const stringResponse = JSON.stringify(resultJson);
-//       console.log(stringResponse)
-//       setConclusion(stringResponse.replace(/"/g, '').replace(/\n/g, ' '));
-//       triggerNotification('Conclusion generated successfully', 'success')
-//       return stringResponse;
-//     }
-//   } catch (error) {
-//     console.error(error)
-//     triggerNotification('An error occurred', 'error')
-//     return false;
-//   } finally {
-//     setIsGeneratingConclusion(false)
-//   }
-// };
-
 const handleOnClick = async () => {
   const { resource } = await fetch('/api/pdf', {
     method: 'POST',
@@ -1509,7 +1626,7 @@ const handleOnClick = async () => {
   downloadUrl(resource.secure_url, 'invoice.pdf')
 };
 
-  return (
+return (
     <main className="flex min-h-screen flex-col items-center justify-center p-24 relative text-white">
               {/* show notification */}
                 {notification && (
@@ -1563,7 +1680,8 @@ const handleOnClick = async () => {
       {/* main playground */}
       <aside className="absolute top-0 right-0 lg:w-10/12 w-9/12 h-full overflow-auto">
         <div className="flex flex-col items-center justify-center p-8">
-        {/* <ReportTemplate /> */}
+          {showHospitalDetailsView && (
+            <HospitalDetailsView />)}
           {!showUploadImageView && !showPortalView && !showReportView && (
             <div className="h-10/12">
                             {defaultViewObservations.length !== 0 
@@ -1611,12 +1729,6 @@ const handleOnClick = async () => {
             )}
         </div>
       </aside>
-      <div className="text-white">
-        {/* TODO:  */}
-      <SignedOut>
-        <SignInButton />
-      </SignedOut>
-      </div>
     </main>
   );
 }
