@@ -8,10 +8,10 @@ import {
   UserButton,
   useUser,
 } from '@clerk/nextjs'
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useCallback, useEffect, useState, useRef, memo } from 'react';
 import { faAdd, faChevronDown, faClose, faFile, faChevronLeft, faChevronRight, faCompass, faShare, faPrint, faUpRightAndDownLeftFromCenter, faExpand, faSquareCheck, faTrash, faCircleCheck, faClone, faPenNib, faSquareMinus, faMinus } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { Patient, Observation, Hospital, PatientObservation, ObservationDefaultView } from './types';
+import { Patient, Observation, Hospital, PatientObservation, ObservationDefaultView, ShareReport } from './types';
 import Notification from './notify';
 import { NextResponse } from 'next/server'
 import { getFirestore, collection, getDocs, getDoc, setDoc, doc, deleteDoc, updateDoc, addDoc, Timestamp } from 'firebase/firestore';
@@ -61,7 +61,10 @@ export default function Home() {
   const [generatingReport, setGeneratingReport] = useState(false);
   const [isUploadingReport, setIsUploadingReport] = useState(false);
   const [isUpdatingReportUrl, setIsUpdatingReportUrl] = useState(false);
+  const [reportViewData, setReportViewData] = useState<ShareReport | null>(null);
+  const [headDoctorName, setHeadDoctorName] = useState('');
   
+  // for testing purposes
   const sampleData = [
     "https://firebasestorage.googleapis.com/v0/b/chatwithpdf-30e42.appspot.com/o/images%2F1724335515486.jpg?alt=media&token=3b886b80-3815-4146-b548-1d3dd27e4643",
     "https://firebasestorage.googleapis.com/v0/b/chatwithpdf-30e42.appspot.com/o/images%2F1724336411144.jpg?alt=media&token=b7cbd4c8-58ea-4e7a-8ec3-dc04440c7f2b",
@@ -616,7 +619,7 @@ export default function Home() {
 
   useEffect(() => {
     fetchHospitalDetails(hospitalId);
-  }, [refetchHospitalDetails]); // Make sure to include hospitalId in the dependency array
+  }, [refetchHospitalDetails, hospitalId]); // Make sure to include hospitalId in the dependency array
 
   // share report
   const shareReport = () => {
@@ -624,9 +627,10 @@ export default function Home() {
   };
   
   // Slider
-  const ImageSlider = (images: any) => {
+  // Memoized ImageSlider component
+  const ImageSlider = memo(({ images }: { images: string[] }) => {
     const [currentIndex, setCurrentIndex] = useState(0);
-
+    
     console.log('images: ', typeof images);
 
     // Convert to array and flatten if necessary
@@ -635,16 +639,18 @@ export default function Home() {
     console.log('imagesArray: ', imagesArray);
 
     // Function to go to the previous image
-    const prevImage = () => {
+    const prevImage = useCallback(() => {
       console.log('previous image');
-      setCurrentIndex((prevIndex) => (prevIndex === 0 ? imagesArray.length - 1 : prevIndex - 1));
-    };
+      setCurrentIndex((prevIndex) => (prevIndex === 0 ? images.length - 1 : prevIndex - 1));
+    }, [images]);
 
     // Function to go to the next image
-    const nextImage = () => {
+    const nextImage = useCallback(() => {
       console.log('next image');
-      setCurrentIndex((prevIndex) => (prevIndex === imagesArray.length - 1 ? 0 : prevIndex + 1));
-    };
+      setCurrentIndex((prevIndex) => (prevIndex === images.length - 1 ? 0 : prevIndex + 1));
+    }, [images]);
+
+    console.log('images: ', images);
 
     return (
       <div className="relative w-full flex items-center justify-center">
@@ -658,17 +664,18 @@ export default function Home() {
 
         {/* Image */}
         <div className="flex items-center justify-center w-full">
-          {isSegmentingScans || imagesArray[currentIndex] === undefined ? (
-            loader()
-          ) : (
+          {images[currentIndex] ? (
             <Image
               priority={true}
-              src={imagesArray[currentIndex] || ''}
+              srcSet={images[currentIndex]}
+              src={images[currentIndex]}
               alt={`Observation Image ${currentIndex + 1}`}
               width={500}  // Adjust the width as needed
               height={300} // Adjust the height as needed
               className="rounded"
             />
+          ) : (
+            <div>Loading...</div> // Provide a loader or fallback content
           )}
         </div>
 
@@ -681,7 +688,7 @@ export default function Home() {
         </button>
       </div>
     );
-  };
+  });
 
   // in default view we will show all observations
   const DefaultView = () => {
@@ -722,6 +729,12 @@ export default function Home() {
     );
   };
 
+
+  // Memoized functions to handle input changes
+  const handleHeadDoctorNameChange = useCallback((e: any) => {
+    setHeadDoctorName(e.target.value);
+  }, []);
+
   // show expanded observation
   const ExpandedObservationView = () => {
     return (
@@ -733,9 +746,9 @@ export default function Home() {
           <button
             onClick={() => setShowExpandedObservation(!showExpandedObservation)}
             className={`flex items-center justify-center w-[24px] h-[24px] rounded-full shadow cursor-pointer hover:bg-[#151515] p-2`}>
-              {!isAddingScanAndPatient
-                ? <FontAwesomeIcon icon={faClose} />
-                : <span className='flex justify-center items-center text-black'>{loader()}</span>
+              {isApprovingObservation || isDeletingObservation || isUpdatingReportUrl || isUploadingReport || generatingReport
+                ? <span className='flex justify-center items-center text-black'>{loader()}</span>
+                : <FontAwesomeIcon icon={faClose} />
               }
           </button>
         </div>
@@ -770,19 +783,19 @@ export default function Home() {
                       autoComplete="off"
                         type="text"
                         id="radiologistName1"
-                        placeholder="Enter your Patient ID"
+                        placeholder="Enter radiologist name"
                         className="w-2/3 mt-2 placeholder:text-[#aaaaaa] placeholder:text-sm w-full px-4 py-3 text-white text-sm bg-transparent rounded border border-[#a1a1aa] focus:outline-none focus:border-white"
                       />
                   </div>
                   <div className="flex flex-col gap-1 items-start justify-start w-1/2">
                     <p className="text-xs text-[#a1a1aa] block font-bold">Head Doctor:</p>
                     <input
-                      disabled={true}
-                      value={oneObservation?.headDoctorName || ''}
+                      value={oneObservation?.headDoctorName || headDoctorName}
+                      onChange={handleHeadDoctorNameChange}
                       autoComplete="off"
                         type="text"
                         id="headDoctorName1"
-                        placeholder="Enter your Patient ID"
+                        placeholder="Enter head doctor name"
                         className="w-2/3 mt-2 placeholder:text-[#aaaaaa] placeholder:text-sm w-full px-4 py-3 text-white text-sm bg-transparent rounded border border-[#a1a1aa] focus:outline-none focus:border-white"
                       />
                     </div>
@@ -894,7 +907,7 @@ export default function Home() {
     triggerNotification('Uploading report...', 'info');
     try {
       // TODO: implement report upload function
-      const dUrl = '';
+      const dUrl = 'cool';
       triggerNotification('Report uploaded successfully', 'success');
       return dUrl;
     } catch (error) {
@@ -930,6 +943,7 @@ export default function Home() {
     try {
       const observationRef = doc(firestore, 'hospitals', hospitalId, 'observations', oneObservation?.id!);
       await updateDoc(observationRef, {
+        headDoctorName: headDoctorName,
         status: 'approved',
       });
       triggerNotification('Observation approved successfully', 'success');
@@ -1026,9 +1040,9 @@ export default function Home() {
           <button
             onClick={() => setShowExpandedConclusion(!showExpandedConclusion)}
             className={`flex items-center justify-center w-[24px] h-[24px] rounded-full shadow cursor-pointer hover:bg-[#151515] p-2`}>
-              {!isAddingScanAndPatient
-                ? <FontAwesomeIcon icon={faClose} />
-                : <span className='flex justify-center items-center text-white'>{loader()}</span>
+              {isAddingScanAndPatient || isRegeneratingConclusion || isDeletingObservation || isSavingObservation || isSegmentingScans
+                ? <span className='flex justify-center items-center text-white'>{loader()}</span>
+                : <FontAwesomeIcon icon={faClose} />
               }
           </button>
         </div>
@@ -1041,7 +1055,7 @@ export default function Home() {
             {/* show conclusion */}
             <div className="">
                 <p className="text-md">Conclusion</p>
-                {(isGeneratingConclusion || isSegmentingScans)
+                {(isGeneratingConclusion || isSegmentingScans || isRegeneratingConclusion)
                   ? loader() 
                   : (
                     <textarea
@@ -1448,7 +1462,7 @@ return (
                 />
             )}
       {/* sidebar */}
-      <aside className="absolute top-0 left-0 w-2/12 h-full bg-[#151515]">
+      <aside className="absolute top-0 left-0 lg:w-2/12 w-3/12 h-full bg-[#151515]">
         <div className="flex flex-col items-start justify-start h-full space-y-8">
             <div>
               <p className="mt-[50px] ml-[20px] text-[46px] font-bold">CoMed</p>
@@ -1489,11 +1503,14 @@ return (
         </div>
       </aside>
       {/* main playground */}
-      <aside className="absolute top-0 right-0 w-10/12 h-full overflow-auto">
+      <aside className="absolute top-0 right-0 lg:w-10/12 w-9/12 h-full overflow-auto">
         <div className="flex flex-col items-center justify-center p-8">
           {!showUploadImageView && !showPortalView && !showReportView && (
-              <div className="h-10/12">
-              <DefaultView />
+            <div className="h-10/12">
+                            {defaultViewObservations.length !== 0 
+                ? (<DefaultView />) 
+                : (<p className="">{loader()}</p>)
+              }
             </div>
             )}
             {/* show expand conclusion view */}
@@ -1502,7 +1519,12 @@ return (
             )}
             {/* show expanded view */}
             {showExpandedObservation && (
-              <ExpandedObservationView />
+              <>
+                {oneObservation !== null 
+                  ? (<ExpandedObservationView />) 
+                  : (<p className="">{loader()}</p>)
+                }
+              </>
             )}
           {/* on show upload image view */}
           {showUploadImageView && (
@@ -1513,18 +1535,25 @@ return (
           {/* on show portal view */}
           {showPortalView && (
             <div className="h-10/12">
-              <DefaultView />
+              {defaultViewObservations.length !== 0 
+                ? (<DefaultView />) 
+                : (<p className="">{loader()}</p>)
+              }
             </div>
             )}
           {/* on show report view */}
           {showReportView && (
             <div className="h-10/12">
-              <ReportView />
+              {reportViewData !== null 
+                ? (<ReportView />) 
+                : (<p className="">{loader()}</p>)
+              }
             </div>
             )}
         </div>
       </aside>
       <div className="text-white">
+        {/* TODO:  */}
       <SignedOut>
         <SignInButton />
       </SignedOut>
