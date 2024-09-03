@@ -20,7 +20,6 @@ import { getFirestore, collection, getDocs, getDoc, setDoc, doc, deleteDoc, upda
 import { getStorage, ref, uploadString, getDownloadURL, uploadBytes } from 'firebase/storage';
 import { app } from './firebaseConfig';
 // import PDFPreview from './pdfpreview';
-import logo from '../../assets/logo.png';
 import { cn, downloadUrl } from './lib/utils';
 
 const storage = getStorage(app);
@@ -71,9 +70,10 @@ export default function Home() {
   
   // for testing purposes
   const sampleData = [
-    "https://firebasestorage.googleapis.com/v0/b/chatwithpdf-30e42.appspot.com/o/images%2F1724335515486.jpg?alt=media&token=3b886b80-3815-4146-b548-1d3dd27e4643",
-    "https://firebasestorage.googleapis.com/v0/b/chatwithpdf-30e42.appspot.com/o/images%2F1724336411144.jpg?alt=media&token=b7cbd4c8-58ea-4e7a-8ec3-dc04440c7f2b",
-    "https://firebasestorage.googleapis.com/v0/b/chatwithpdf-30e42.appspot.com/o/images%2F1724362545562.jpg?alt=media&token=dcc805c0-b4ce-4574-adf4-c3354a90c7bc",
+    "https://firebasestorage.googleapis.com/v0/b/comed-27032024.appspot.com/o/images%2FY12.jpg?alt=media&token=5e53394c-f012-4aee-901c-c028f1c2e570",
+    "https://firebasestorage.googleapis.com/v0/b/comed-27032024.appspot.com/o/images%2FY14.jpg?alt=media&token=e06f7c52-9f1c-4999-9d9c-33f9b956e08d",
+    "https://firebasestorage.googleapis.com/v0/b/comed-27032024.appspot.com/o/images%2FY187.jpg?alt=media&token=36c88074-8cec-4640-8813-ca74bddeb588",
+    "https://firebasestorage.googleapis.com/v0/b/comed-27032024.appspot.com/o/images%2FY34.jpg?alt=media&token=6b51ed32-bfaf-43b5-ac95-5236d3466ce1",
   ]
 
   // refs

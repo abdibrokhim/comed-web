@@ -1,31 +1,10 @@
 import { Page, Text, View, Document, StyleSheet, renderToStream, Image, Font } from '@react-pdf/renderer';
+import { Timestamp } from 'firebase/firestore';
 import { NextResponse } from 'next/server';
 
 const studyType = "PROTOCOL OF MRI STUDY OF THE BRAIN";
 const disclaimerA = 'This conclusion is not a final diagnosis and requires comparison with clinical and laboratory data.';
 const disclaimerB = `In case of typos, contact phone: `;
-
-const sampleData = {
-  patientDetails: {
-    name: "John Doe",
-    birthYear: "1975",
-    phoneNumber: "+1234567890"
-  },
-  hospitalDetails: {
-    name: 'SI "REPUBLICAN SPECIALIZED CENTER FOR SURGERY NAMED AFTER ACADEMICIAN V. VAKHIDOV"',
-    department: "DEPARTMENT OF MAGNETIC RESONANCE AND COMPUTED TOMOGRAPHY",
-    address: `Uzbekistan, Tashkent, ul. Farkhadskaya 10.`,
-    phone: "+0987654321"
-  },
-  imageUrls: [
-    "https://firebasestorage.googleapis.com/v0/b/chatwithpdf-30e42.appspot.com/o/images%2F1724335515486.jpg?alt=media&token=3b886b80-3815-4146-b548-1d3dd27e4643",
-    "https://firebasestorage.googleapis.com/v0/b/chatwithpdf-30e42.appspot.com/o/images%2F1724335515486.jpg?alt=media&token=3b886b80-3815-4146-b548-1d3dd27e4643"
-  ],
-  conclusionText: "MRI signs of vascular encephalopathy with the presence of multiple ischemic foci and atrophy of the frontotemporal areas on both sides. Left maxillary sinus cyst. Consultation with a neurologist is recommended. Consultation with an otolaryngologist is recommended.",
-  radiologistName: "Dr. Emily Smith",
-  headDoctorName: "Dr. John Watson",
-  createdAt: new Date(),
-};
 
 Font.register({
   family: 'Oswald',
@@ -92,6 +71,13 @@ const styles = StyleSheet.create({
     fontSize: 8,
     fontFamily: 'Times-Roman'
   },
+  notes: {
+    marginTop: 1,
+    marginBottom: 2,
+    fontSize: 6,
+    textAlign: 'left',
+    fontFamily: 'Times-Roman'
+  },
   headerText: {
     fontSize: 8,
     fontFamily: 'Times-Roman'
@@ -117,9 +103,14 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     textAlign: 'center',
     color: 'grey',
+    bottom: 10,
+    margin: 'auto',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   footerText: {
     fontSize: 6,
+    textAlign: 'center',
     marginBottom: 4,
   },
   pageNumber: {
@@ -134,82 +125,116 @@ const styles = StyleSheet.create({
   section: {
     marginBottom: 10
   },
+  main: {
+    position: 'relative',
+  },
+  border: {
+    border: 1,
+    paddingVertical: 100,
+    paddingHorizontal: 100,
+    marginBottom: 10,
+  },
 });
 
-interface InvoiceProps {
-  invoice: {
-    id: number;
-    name: string;
-    dateCreated: number;
-    value: number;
-    description: string;
-    status: string;
-    customer: {
-      name: string;
-      email: string;
-    }
+interface ReportTemplateProps {
+  report: {
+    patientDetails: {
+      name: string,
+      birthYear: string,
+      phoneNumber: string,
+    },
+    hospitalDetails: {
+      name: string,
+      department: string,
+      address: string,
+      phone: string,
+    },
+    imageUrls: string[],
+    conclusionText: string,
+    radiologistName: string,
+    headDoctorName: string,
+    createdAt: Timestamp,
   };
 }
 
-const Invoice = ({ invoice }: InvoiceProps) => {
+function formatTimestampToDate(timestamp: Timestamp): string {
+  const date = timestamp.toDate();
+  return date.toLocaleDateString('en-US');
+}
+
+const ReportTemplate = ({ report } : ReportTemplateProps) => {
   return (
     <Document>
       <Page style={styles.body}>
-        <View>
+        <View style={styles.main}>
           <View style={styles.header}>
-            <Text style={styles.headerTitleWithBorder}>{sampleData.hospitalDetails.name.toUpperCase()}</Text>
-            <Text style={styles.headerTitle}>{sampleData.hospitalDetails.department.toUpperCase()}</Text>
-            <Text style={styles.headerText}>{sampleData.hospitalDetails.address + ' Phone: ' + sampleData.hospitalDetails.phone}</Text>
+            <Text style={styles.headerTitleWithBorder}>{report.hospitalDetails.name.toUpperCase()}</Text>
+            <Text style={styles.headerTitle}>{report.hospitalDetails.department.toUpperCase()}</Text>
+            <Text style={styles.headerText}>{report.hospitalDetails.address}</Text>
           </View>
           <View style={styles.makeRow}>
             <View style={styles.section}>
               <Text style={styles.infoHeader}>{'Patient Infos'.toUpperCase()}</Text>
-              <Text style={styles.text}>Name: {sampleData.patientDetails.name}</Text>
-              <Text style={styles.text}>Birth Year: {sampleData.patientDetails.birthYear}</Text>
-              <Text style={styles.text}>Phone Number: {sampleData.patientDetails.phoneNumber}</Text>
+              <Text style={styles.text}>Name: {report.patientDetails.name}</Text>
+              <Text style={styles.text}>Birth Year: {report.patientDetails.birthYear}</Text>
+              <Text style={styles.text}>Phone Number: {report.patientDetails.phoneNumber}</Text>
             </View>
             <View style={styles.section}>
               <Text style={styles.infoHeader}>{'Medicals Infos'.toUpperCase()}</Text>
-              <Text style={styles.text}>Radiologist Name: {sampleData.radiologistName}</Text>
-              <Text style={styles.text}>Doctor Name: {sampleData.headDoctorName}</Text>
-              <Text style={styles.text}>Date: {sampleData.createdAt.toLocaleDateString()}</Text>
+              <Text style={styles.text}>Radiologist Name: {report.radiologistName}</Text>
+              <Text style={styles.text}>Doctor Name: {report.headDoctorName}</Text>
+              <Text style={styles.text}>Date: {formatTimestampToDate(report.createdAt)}</Text>
             </View>
           </View>
           <View style={styles.section}>
             <View style={styles.imageCenter}>
               <Text style={styles.headerTitleCentered}>{studyType}</Text>
-              {sampleData.imageUrls.map((url, index) => (
+              {report.imageUrls.map((url, index) => (
                 <Image key={index} src={url} style={styles.image} />
               ))}
             </View>
           </View>
           <View style={styles.section}>
             <Text style={styles.headerTitleCentered}>{'Medical Conclusion'.toUpperCase()}</Text>
-            <Text style={styles.text}>{sampleData.conclusionText}</Text>
+            <Text style={styles.text}>{report.conclusionText}</Text>
+          </View>
+          <View style={styles.section}>
+            <Text style={styles.headerTitleCentered}>{'Additional Notes'.toUpperCase()}</Text>
+            <Text style={styles.notes}>(use the given blank space to add any additional notes, comments, and sketches)</Text>
+            <Text style={styles.border}></Text>
           </View>
         </View>
         <View style={styles.footer}>
           <Text style={styles.footerText}>{disclaimerA}</Text>
-          <Text style={styles.footerText}>{disclaimerB + ' ' + sampleData.hospitalDetails.phone}</Text>
+          <Text style={styles.footerText}>{disclaimerB + ' ' + report.hospitalDetails.phone}</Text>
         </View>
       </Page>
     </Document>
   )
 }
 
-export async function GET(request: Request, { params }: { params: { invoiceId: string; }}) {
-  const invoice = {
-    id: 1,
-    name: 'Sample Invoice',
-    dateCreated: Date.now(),
-    value: 1234,
-    description: 'This is a sample invoice.',
-    status: 'open',
-    customer: {
-      name: 'John Smith',
-      email: 'john@smith.com'
-    }
+export async function GET(request: Request, { params } : { params: any }) {
+  const report = {
+    patientDetails: {
+      name: "Ibrohim Abdivokhidov",
+      birthYear: "2003",
+      phoneNumber: "+998938966698"
+    },
+    hospitalDetails: {
+      name: 'SI "REPUBLICAN SPECIALIZED CENTER FOR SURGERY NAMED AFTER ACADEMICIAN V. VAKHIDOV"',
+      department: "DEPARTMENT OF MAGNETIC RESONANCE AND COMPUTED TOMOGRAPHY",
+      address: `Uzbekistan, Tashkent, ul. Farkhadskaya 10.`,
+      phone: "+998903102024"
+    },
+    imageUrls: [
+      "https://firebasestorage.googleapis.com/v0/b/comed-27032024.appspot.com/o/images%2FY12.jpg?alt=media&token=5e53394c-f012-4aee-901c-c028f1c2e570",
+    ],
+    conclusionText: "MRI signs of vascular encephalopathy with the presence of multiple ischemic foci and atrophy of the frontotemporal areas on both sides. Left maxillary sinus cyst. Consultation with a neurologist is recommended. Consultation with an otolaryngologist is recommended.",
+    radiologistName: "Dr. Aziza",
+    headDoctorName: "Dr. Nigora",
+    createdAt: Timestamp.fromDate(new Date()),
   };
-  const stream = await renderToStream(<Invoice invoice={invoice} />);
+
+  const stream = await renderToStream(<ReportTemplate report={report} />);
   return new NextResponse(stream as unknown as ReadableStream)
 }
