@@ -56,6 +56,7 @@ export interface ShareReport {
     observationId: string;
     hospitalId: string;
     patientId: string;
+    coverImageUrl: string;
     reportUrl: string;
     createdAt?: Timestamp;
 }

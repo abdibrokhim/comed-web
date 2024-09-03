@@ -9,7 +9,7 @@ import {
   useUser,
 } from '@clerk/nextjs'
 import React, { useCallback, useEffect, useState, useRef, memo } from 'react';
-import { faAdd, faChevronDown, faClose, faFile, faChevronLeft, faChevronRight, faCompass, faShare, faPrint, faUpRightAndDownLeftFromCenter, faExpand, faSquareCheck, faTrash, faCircleCheck, faClone, faPenNib, faSquareMinus, faMinus, faCircleInfo } from '@fortawesome/free-solid-svg-icons';
+import { faAdd, faChevronDown, faClose, faFile, faChevronLeft, faChevronRight, faCompass, faShare, faPrint, faUpRightAndDownLeftFromCenter, faExpand, faSquareCheck, faTrash, faCircleCheck, faClone, faPenNib, faSquareMinus, faMinus, faCircleInfo, faEye } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { Patient, Observation, Hospital, PatientObservation, ObservationDefaultView, ShareReport, ReportProps } from './types';
 import Notification from './notify';
@@ -64,7 +64,8 @@ export default function Home() {
   const [generatingReport, setGeneratingReport] = useState(false);
   const [isUploadingReport, setIsUploadingReport] = useState(false);
   const [isUpdatingReportUrl, setIsUpdatingReportUrl] = useState(false);
-  const [reportViewData, setReportViewData] = useState<ShareReport | null>(null);
+  const [reportViewData, setReportViewData] = useState<ShareReport[]>([]);
+  const [isFetchingReports, setIsFetchingReports] = useState(false);
   const [headDoctorName, setHeadDoctorName] = useState('');
   const [showHospitalDetailsView, setShowHospitalDetailsView] = useState(false);
   const [isSavingHospitalDetails, setIsSavingHospitalDetails] = useState(false);
@@ -244,7 +245,29 @@ export default function Home() {
     setShowUploadImageView(false);
     setShowPortalView(false);
     setShowReportView(true);
+    fetchReports();
   }
+
+  const fetchReports = async () => {
+    setIsFetchingReports(true);
+    console.log('fetching reports...');
+    try {
+      const reportsRef = collection(firestore, 'hospitals', hospitalId, 'reports');
+      const reportsSnapshot = await getDocs(reportsRef);
+      const reportsData: ShareReport[] = [];
+  
+      for (const doc of reportsSnapshot.docs) {
+        const reportData = doc.data() as ShareReport;
+        reportsData.push(reportData);
+      }
+      setReportViewData(reportsData);
+    } catch (error) {
+      console.error('Error fetching reports:', error);
+      triggerNotification('An error occurred while fetching reports', 'error');
+    } finally {
+      setIsFetchingReports(false);
+    }
+  };
 
   const proceedWithScans = async () => {
     console.log('proceeding with scans...');
@@ -933,15 +956,14 @@ export default function Home() {
               <button 
                     disabled={isApprovingObservation || isDeletingObservation || oneObservation?.status === "approved" || isUpdatingReportUrl || isUploadingReport || generatingReport || isFetchingObservationById}
                   onClick={ async () => {
-                    await handleGenerateReport();
+                    // await handleGenerateReport();
 
-                    // if (await handleApproveObservation()) {
-                    //   if (await handleGenerateReport()) {
-                    //     if (await uploadReportToFirebaseStorage()) {
-                    //       updateObservationReportUrl();
-                    //     }
-                    //   }
-                    // }
+                    if (await handleApproveObservation()) {
+                      const url = await handleGenerateReport();
+                      if (url) {
+                        updateObservationReportUrl(url);
+                      }
+                    }
                   }}
                   className={`bg-[#134e4a] text-black p-2 rounded-md w-full font-bold hover:bg-[#0f766e]`}>
                   {!isApprovingObservation || !isDeletingObservation || !isUpdatingReportUrl || !isUploadingReport || !generatingReport || !isFetchingObservationById
@@ -957,13 +979,28 @@ export default function Home() {
     );
   };
 
+  // export interface ShareReport {
+  //     id: string;
+  //     observationId: string;
+  //     hospitalId: string;
+  //     patientId: string;
+  //     reportUrl: string;
+  //     createdAt?: Timestamp;
+  // }
   // update observation reportUrl in firestore
-  const updateObservationReportUrl = async () => {
+  const updateObservationReportUrl = async (url: string) => {
     setIsUpdatingReportUrl(true);
     console.log('updating report url');
     triggerNotification('Updating report URL...', 'info');
     try {
-      // TODO: implement report url update function
+      const reportRef = await addDoc(collection(firestore, 'hospitals', hospitalId, 'reports'), {
+        observationId: oneObservation?.id!,
+        hospitalId: hospitalId,
+        patientId: oneObservation?.patientId!,
+        reportUrl: url,
+        createdAt: new Date(),
+      });
+      console.log('Report URL updated with ID:', reportRef.id);
       triggerNotification('Report URL updated successfully', 'success');
       return true;
     } catch (error) {
@@ -972,24 +1009,6 @@ export default function Home() {
     } finally {
       setIsUpdatingReportUrl(false);
       setRefetchOneObservation(!refetchOneObservation);
-    }
-  };
-
-  // upload report to firebase storage. report will be in PDF format always
-  const uploadReportToFirebaseStorage = async () => {
-    setIsUploadingReport(true);
-    console.log('uploading report');
-    triggerNotification('Uploading report...', 'info');
-    try {
-      // TODO: implement report upload function
-      const dUrl = 'cool';
-      triggerNotification('Report uploaded successfully', 'success');
-      return dUrl;
-    } catch (error) {
-      console.error('Error uploading report:', error);
-      triggerNotification('An error occurred while uploading report', 'error');
-    } finally {
-      setIsUploadingReport(false);
     }
   };
 
@@ -1026,9 +1045,11 @@ export default function Home() {
   
         // Open the generated PDF in a new tab
         window.open(downloadUrl, '_blank');
+        return downloadUrl;
       } else {
         console.error('Error generating report:', await result.text());
         triggerNotification('An error occurred while generating report', 'error');
+        return false;
       }
     } catch (error) {
       console.error('Error generating report:', error);
@@ -1605,28 +1626,71 @@ export default function Home() {
     );
   };
 
+  const BlurImage = ({ children }: { children: React.ReactNode }) => {
+    const [isRevealed, setIsRevealed] = useState(false);
+
+    const handleRevealClick = () => {
+      setIsRevealed(true); // Reveal the image
+      setTimeout(() => {
+        setIsRevealed(false); // Reveal the image
+      }, 3000); // Simulated delay for fetching or loading
+    };
+
+    return (
+<div className="flex flex-row gap-4 flex-wrap justify-center m-auto pb-12">
+      <div className="relative shadow-lg rounded-md p-2 group">
+        {/* Blur or cover the image based on the state */}
+        <div className={`${isRevealed ? 'blur-0' : 'blur-md'} transition-all duration-300`}>
+        <div
+          className={`absolute inset-0 bg-black transition-opacity duration-300 flex items-center justify-center rounded-md ${
+            isRevealed ? 'opacity-0' : 'bg-opacity-50'
+          }`}
+        >
+          <div className="absolute inset-0 z-50 bg-black bg-opacity-50 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center rounded-md">
+            <div className="flex gap-4">
+              <button
+                onClick={handleRevealClick}
+                className={`bg-[#334155] text-white p-2 rounded-md font-bold hover:bg-[#94a3b8] cursor-pointer`}
+              >
+                <span className="flex justify-center items-center">
+                  <FontAwesomeIcon icon={faEye} className="mr-2" />
+                  {'Show'}
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+          {children}
+      </div>
+      </div>
+    </div>
+    );
+  };
+
   const ReportView = () => {
 return (
       <div className="flex flex-col items-center justify-center block">
         <div className="flex flex-row flex-wrap gap-8 items-center justify-start">
-            {sampleData.map((obs, index) => (
-              <div key={obs[index]} className="flex flex-col justify-between gap-2">
+            {reportViewData.map((obs, index) => (
+              <div key={obs.id} className="flex flex-col justify-between gap-2">
                 {/* show report pdf preview */}
                 <div className="flex items-center justify-center p-2 border border-[#a1a1aa] rounded-md">
-                  <Image
-                  priority={true}
-                    src={sampleData[0]}
-                    alt={`Observation Image ${sampleData[0]}`}
-                    width={300}  // Adjust the width as needed
-                    height={300} // Adjust the height as needed
-                    className="rounded"
-                  />
+                  <BlurImage>
+                    <Image
+                      priority={true}
+                      src={obs.coverImageUrl}
+                      alt={`Observation Image ${index}`}
+                      width={300}  // Adjust the width as needed
+                      height={300} // Adjust the height as needed
+                      className="rounded"
+                    />
+                  </BlurImage>
                 </div>
               <div className="flex flex-row gap-2">
                   <button 
                     disabled={isFetchingObservationById}
                     onClick={() => {
-                      // fetchObservationById(obs.id);
+                      fetchObservationById(obs.id);
                       setShowExpandedObservation(!showExpandedObservation);
                     }} 
                     className={`bg-[#0c4a6e] text-black p-2 rounded-md w-full font-bold hover:bg-[#0369a1]`}>
@@ -1638,8 +1702,7 @@ return (
                   <button 
                     disabled={isFetchingObservationById}
                     onClick={() => {
-                      // Trigger the print dialog
-                      window.print();
+                      window.open(obs.reportUrl, '_blank');
                     }} 
                     className={`bg-[#a1a1aa] text-black p-2 rounded-md w-full font-bold hover:bg-[#f4f4f5]`}>
                     {!isFetchingObservationById 
@@ -1761,7 +1824,7 @@ return (
           {/* on show report view */}
           {showReportView && (
             <div className="h-10/12">
-              {reportViewData !== null 
+              {reportViewData.length !== 0 || !isFetchingReports
                 ? (<ReportView />) 
                 : (<p className="">{loader()}</p>)
               }
