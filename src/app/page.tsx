@@ -11,7 +11,7 @@ import {
 import React, { useCallback, useEffect, useState, useRef, memo } from 'react';
 import { faAdd, faChevronDown, faClose, faFile, faChevronLeft, faChevronRight, faCompass, faShare, faPrint, faUpRightAndDownLeftFromCenter, faExpand, faSquareCheck, faTrash, faCircleCheck, faClone, faPenNib, faSquareMinus, faMinus, faCircleInfo } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { Patient, Observation, Hospital, PatientObservation, ObservationDefaultView, ShareReport } from './types';
+import { Patient, Observation, Hospital, PatientObservation, ObservationDefaultView, ShareReport, ReportProps } from './types';
 import Notification from './notify';
 import { NextResponse } from 'next/server'
 import { Page, Text, View, Document, StyleSheet, Font, PDFViewer, Image as PdfImage } from '@react-pdf/renderer';
@@ -717,7 +717,7 @@ export default function Home() {
 
         {/* Image */}
         <div className="flex items-center justify-center w-full">
-          {images[currentIndex] ? (
+          {images[currentIndex] !== null || !isFetchingObservationById ? (
             <Image
             priority={true}
             src={images[currentIndex]}
@@ -727,7 +727,7 @@ export default function Home() {
               className="rounded"
             />
           ) : (
-            <div>Loading...</div> // Provide a loader or fallback content
+              <span className='flex justify-center items-center text-white'>{loader()}</span>
           )}
         </div>
 
@@ -798,7 +798,7 @@ export default function Home() {
           <button
             onClick={() => setShowExpandedObservation(!showExpandedObservation)}
             className={`flex items-center justify-center w-[24px] h-[24px] rounded-full shadow cursor-pointer hover:bg-[#151515] p-2`}>
-              {isApprovingObservation || isDeletingObservation || isUpdatingReportUrl || isUploadingReport || generatingReport
+              {isApprovingObservation || isDeletingObservation || isUpdatingReportUrl || isUploadingReport || generatingReport || isFetchingObservationById
                 ? <span className='flex justify-center items-center text-black'>{loader()}</span>
                 : <FontAwesomeIcon icon={faClose} />
               }
@@ -813,6 +813,8 @@ export default function Home() {
             {/* show conclusion */}
             <div className="">
                 <p className="text-md">Conclusion</p>
+                {!isFetchingObservationById
+                    ? 
                 <textarea
                   disabled={true}
                   value={oneObservation?.conclusionText || ''}
@@ -821,6 +823,7 @@ export default function Home() {
                   className="mt-2 placeholder:text-[#aaaaaa] placeholder:text-sm w-full px-4 py-3 text-white bg-transparent rounded border border-[#a1a1aa] focus:outline-none focus:border-white resize-none"
                   rows={4} // Specify the number of rows (height) of the textarea
                 />
+                : <span className='flex justify-center items-center text-white mt-2'>{loader()}</span>}
             </div>
             {/* show observation details */}
             <div className="mt-[40px] flex flex-col gap-6 justify-between items-start">
@@ -829,6 +832,8 @@ export default function Home() {
                 <div className="mt-2 flex flex-row gap-2 items-center justify-center">
                   <div className="flex flex-col gap-1 items-start justify-start w-1/2">
                     <p className="text-xs text-[#a1a1aa] block font-bold">Radiologist</p>
+                    {!isFetchingObservationById
+                    ? 
                     <input
                       disabled={true}
                       value={oneObservation?.radiologistName || ''}
@@ -838,9 +843,12 @@ export default function Home() {
                         placeholder="Enter radiologist name"
                         className="w-2/3 mt-2 placeholder:text-[#aaaaaa] placeholder:text-sm w-full px-4 py-3 text-white text-sm bg-transparent rounded border border-[#a1a1aa] focus:outline-none focus:border-white"
                       />
+                      : <span className='flex justify-center items-center text-white mt-2'>{loader()}</span>}
                   </div>
                   <div className="flex flex-col gap-1 items-start justify-start w-1/2">
                     <p className="text-xs text-[#a1a1aa] block font-bold">Head Doctor:</p>
+                    {!isFetchingObservationById
+                    ? 
                     <input
                       value={oneObservation?.headDoctorName || headDoctorName}
                       onChange={handleHeadDoctorNameChange}
@@ -850,6 +858,7 @@ export default function Home() {
                         placeholder="Enter head doctor name"
                         className="w-2/3 mt-2 placeholder:text-[#aaaaaa] placeholder:text-sm w-full px-4 py-3 text-white text-sm bg-transparent rounded border border-[#a1a1aa] focus:outline-none focus:border-white"
                       />
+                      : <span className='flex justify-center items-center text-white mt-2'>{loader()}</span>}
                     </div>
                 </div>
               </div>
@@ -859,18 +868,24 @@ export default function Home() {
                 <div className="mt-2 w-full flex flex-row gap-2 items-center justify-center">
                 <div className="flex flex-col gap-1 items-start justify-start w-3/6">
                   <p className="text-xs text-[#a1a1aa] block font-bold">Full Name:</p>
-                  <input
-                      disabled={true}
-                      value={oneObservation?.patientDetails.name || ''}
-                      autoComplete="off"
-                        type="text"
-                        id="fullName1"
-                        placeholder="Enter your Patient ID"
-                        className="w-2/3 mt-2 placeholder:text-[#aaaaaa] placeholder:text-sm w-full px-4 py-3 text-sm text-white bg-transparent rounded border border-[#a1a1aa] focus:outline-none focus:border-white"
-                      />
+                  {!isFetchingObservationById
+                    ? 
+                    <input
+                        disabled={true}
+                        value={oneObservation?.patientDetails.name || ''}
+                        autoComplete="off"
+                          type="text"
+                          id="fullName1"
+                          placeholder="Enter your Patient ID"
+                          className="w-2/3 mt-2 placeholder:text-[#aaaaaa] placeholder:text-sm w-full px-4 py-3 text-sm text-white bg-transparent rounded border border-[#a1a1aa] focus:outline-none focus:border-white"
+                        />
+                  : <span className='flex justify-center items-center text-white mt-2'>{loader()}</span>
+                }
                   </div>
                   <div className="flex flex-col gap-1 items-start justify-start w-1/6">
                   <p className="text-xs text-[#a1a1aa] block font-bold">Birth Year:</p>
+                  {!isFetchingObservationById
+                    ? 
                   <input
                     disabled={true}
                     value={oneObservation?.patientDetails.birthYear || ''}
@@ -880,18 +895,24 @@ export default function Home() {
                       placeholder="Enter your Patient ID"
                       className="w-2/3 mt-2 placeholder:text-[#aaaaaa] placeholder:text-sm w-full px-4 py-3 text-sm text-white bg-transparent rounded border border-[#a1a1aa] focus:outline-none focus:border-white"
                     />
+                  : <span className='flex justify-center items-center text-white mt-2'>{loader()}</span>
+                }
                   </div>
                   <div className="flex flex-col gap-1 items-start justify-start w-2/6">
                   <p className="text-xs text-[#a1a1aa] block font-bold">Phone Number:</p>
+                  {!isFetchingObservationById
+                    ? 
                   <input
-                    disabled={true}
-                    value={oneObservation?.patientDetails.phoneNumber || ''}
-                    autoComplete="off"
-                      type="text"
-                      id="phoneNumber1"
-                      placeholder="Enter your Patient ID"
-                      className="w-2/3 mt-2 placeholder:text-[#aaaaaa] placeholder:text-sm w-full px-4 py-3 text-sm text-white bg-transparent rounded border border-[#a1a1aa] focus:outline-none focus:border-white"
-                    />
+                  disabled={true}
+                  value={oneObservation?.patientDetails.phoneNumber || ''}
+                  autoComplete="off"
+                  type="text"
+                  id="phoneNumber1"
+                  placeholder="Enter your Patient ID"
+                  className="w-2/3 mt-2 placeholder:text-[#aaaaaa] placeholder:text-sm w-full px-4 py-3 text-sm text-white bg-transparent rounded border border-[#a1a1aa] focus:outline-none focus:border-white"
+                  />
+                  : <span className='flex justify-center items-center text-white mt-2'>{loader()}</span>
+                }
                     </div>
                 </div>
               </div>
@@ -899,29 +920,31 @@ export default function Home() {
             {/* show action buttons */}
             <div className="flex flex-row gap-4 mt-[60px]"> 
               <button 
-                    disabled={isApprovingObservation || isDeletingObservation || isUpdatingReportUrl || isUploadingReport || generatingReport}
+                    disabled={isApprovingObservation || isDeletingObservation || isUpdatingReportUrl || isUploadingReport || generatingReport || isFetchingObservationById}
                   onClick={() => {
                     handleDeleteObservation();
                   }} 
                   className={`bg-[#7f1d1d] text-black p-2 rounded-md w-full font-bold hover:bg-[#b91c1c]`}>
-                  {!isApprovingObservation || !isDeletingObservation || !isUpdatingReportUrl || !isUploadingReport || !generatingReport
+                  {!isApprovingObservation || !isDeletingObservation || !isUpdatingReportUrl || !isUploadingReport || !generatingReport || !isFetchingObservationById
                     ? <span className='flex justify-center items-center text-white'>Delete</span>
                     : <span className='flex justify-center items-center text-white'>{loader()}</span>
                   }
                 </button>
               <button 
-                    disabled={isApprovingObservation || isDeletingObservation || oneObservation?.status === "approved" || isUpdatingReportUrl || isUploadingReport || generatingReport}
+                    disabled={isApprovingObservation || isDeletingObservation || oneObservation?.status === "approved" || isUpdatingReportUrl || isUploadingReport || generatingReport || isFetchingObservationById}
                   onClick={ async () => {
-                    if (await handleApproveObservation()) {
-                      if (await handleGenerateReport()) {
-                        if (await uploadReportToFirebaseStorage()) {
-                          updateObservationReportUrl();
-                        }
-                      }
-                    }
+                    await handleGenerateReport();
+
+                    // if (await handleApproveObservation()) {
+                    //   if (await handleGenerateReport()) {
+                    //     if (await uploadReportToFirebaseStorage()) {
+                    //       updateObservationReportUrl();
+                    //     }
+                    //   }
+                    // }
                   }}
                   className={`bg-[#134e4a] text-black p-2 rounded-md w-full font-bold hover:bg-[#0f766e]`}>
-                  {!isApprovingObservation || !isDeletingObservation || !isUpdatingReportUrl || !isUploadingReport || !generatingReport
+                  {!isApprovingObservation || !isDeletingObservation || !isUpdatingReportUrl || !isUploadingReport || !generatingReport || !isFetchingObservationById
                     ? <span className='flex justify-center items-center text-white'>{oneObservation?.status === "approved" ? "Approved" : "Approve"}</span>
                     : <span className='flex justify-center items-center text-white'>{loader()}</span>
                   }
@@ -976,9 +999,37 @@ export default function Home() {
     console.log('generating report');
     triggerNotification('Generating report...', 'info');
     try {
-      // TODO: implement pdf generator function
-      triggerNotification('Report generated successfully. You can see it in the report section', 'success');
-      return true;
+      const reportData: ReportProps = {
+        report: {
+          patientDetails: oneObservation?.patientDetails!,
+          hospitalDetails: oneObservation?.hospitalDetails!,
+          imageUrls: oneObservation?.imageUrls!,
+          conclusionText: oneObservation?.conclusionText!,
+          radiologistName: oneObservation?.radiologistName!,
+          headDoctorName: oneObservation?.headDoctorName!,
+          createdAt: oneObservation?.createdAt!,
+        }
+      }
+      // POST request to generate the report
+      const result = await fetch('/api/pdf', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(reportData),
+      });
+
+      if (result.ok) {
+        const { downloadUrl } = await result.json();
+        console.log('PDF report generated and uploaded. Download URL:', downloadUrl);
+        triggerNotification('Report generated and uploaded successfully.', 'success');
+  
+        // Open the generated PDF in a new tab
+        window.open(downloadUrl, '_blank');
+      } else {
+        console.error('Error generating report:', await result.text());
+        triggerNotification('An error occurred while generating report', 'error');
+      }
     } catch (error) {
       console.error('Error generating report:', error);
       triggerNotification('An error occurred while generating report', 'error');
@@ -1615,17 +1666,6 @@ return (
     );
   };
 
-const handleOnClick = async () => {
-  const { resource } = await fetch('/api/pdf', {
-    method: 'POST',
-    body: JSON.stringify({
-      siteUrl: 'http://localhost:3000/'
-    })
-  }).then(r => r.json())
-
-  downloadUrl(resource.secure_url, 'invoice.pdf')
-};
-
 return (
     <main className="flex min-h-screen flex-col items-center justify-center p-24 relative text-white">
               {/* show notification */}
@@ -1650,7 +1690,7 @@ return (
             {/* show upload image view */}
             <div>
               <button 
-                onClick={handleOnClick}
+                onClick={handleSelectScansClick}
                 className="text-md cursor-pointer w-full hover:underline border border-white rounded-md px-4 py-4 flex items-center"
               ><FontAwesomeIcon icon={faAdd} className="mr-2"/> Upload Scan(s)</button>
             </div>

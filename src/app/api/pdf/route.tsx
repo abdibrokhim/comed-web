@@ -1,6 +1,7 @@
 import { Page, Text, View, Document, StyleSheet, renderToStream, Image, Font } from '@react-pdf/renderer';
 import { Timestamp } from 'firebase/firestore';
 import { NextResponse } from 'next/server';
+import { Patient, Observation, Hospital, PatientObservation, ObservationDefaultView, ShareReport, ReportProps } from '../../types';
 
 const studyType = "PROTOCOL OF MRI STUDY OF THE BRAIN";
 const disclaimerA = 'This conclusion is not a final diagnosis and requires comparison with clinical and laboratory data.';
@@ -138,17 +139,8 @@ const styles = StyleSheet.create({
 
 interface ReportTemplateProps {
   report: {
-    patientDetails: {
-      name: string,
-      birthYear: string,
-      phoneNumber: string,
-    },
-    hospitalDetails: {
-      name: string,
-      department: string,
-      address: string,
-      phone: string,
-    },
+    patientDetails: Patient,
+    hospitalDetails: Hospital,
     imageUrls: string[],
     conclusionText: string,
     radiologistName: string,
@@ -157,8 +149,9 @@ interface ReportTemplateProps {
   };
 }
 
-function formatTimestampToDate(timestamp: Timestamp): string {
-  const date = timestamp.toDate();
+function formatTimestampToDate(timestamp: { seconds: number; nanoseconds: number }): string {
+  const milliseconds = timestamp.seconds * 1000 + timestamp.nanoseconds / 1000000;
+  const date = new Date(milliseconds);
   return date.toLocaleDateString('en-US');
 }
 
@@ -213,28 +206,71 @@ const ReportTemplate = ({ report } : ReportTemplateProps) => {
   )
 }
 
-export async function GET(request: Request, { params } : { params: any }) {
-  const report = {
-    patientDetails: {
-      name: "Ibrohim Abdivokhidov",
-      birthYear: "2003",
-      phoneNumber: "+998938966698"
-    },
-    hospitalDetails: {
-      name: 'SI "REPUBLICAN SPECIALIZED CENTER FOR SURGERY NAMED AFTER ACADEMICIAN V. VAKHIDOV"',
-      department: "DEPARTMENT OF MAGNETIC RESONANCE AND COMPUTED TOMOGRAPHY",
-      address: `Uzbekistan, Tashkent, ul. Farkhadskaya 10.`,
-      phone: "+998903102024"
-    },
-    imageUrls: [
-      "https://firebasestorage.googleapis.com/v0/b/comed-27032024.appspot.com/o/images%2FY12.jpg?alt=media&token=5e53394c-f012-4aee-901c-c028f1c2e570",
-    ],
-    conclusionText: "MRI signs of vascular encephalopathy with the presence of multiple ischemic foci and atrophy of the frontotemporal areas on both sides. Left maxillary sinus cyst. Consultation with a neurologist is recommended. Consultation with an otolaryngologist is recommended.",
-    radiologistName: "Dr. Aziza",
-    headDoctorName: "Dr. Nigora",
-    createdAt: Timestamp.fromDate(new Date()),
-  };
+// To store the generated report temporarily
+let generatedReport: ReportProps | null = null;
 
-  const stream = await renderToStream(<ReportTemplate report={report} />);
-  return new NextResponse(stream as unknown as ReadableStream)
+// POST request to generate the report
+import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { app } from '../../firebaseConfig';
+
+// Initialize Firebase Storage
+const storage = getStorage(app);
+
+export async function POST(request: Request) {
+  try {
+    const body = await request.json(); // Parse the JSON body from the request
+    console.log('Received body: ', body);
+
+    const { report }: ReportProps = body; // Destructure the report from the parsed body
+
+    // Generate the PDF stream
+    const stream = await renderToStream(<ReportTemplate report={report} />);
+    const chunks: Uint8Array[] = [];
+
+    // Collect the chunks from the stream
+    stream.on('data', (chunk) => chunks.push(chunk));
+    await new Promise((resolve, reject) => {
+      stream.on('end', resolve);
+      stream.on('error', reject);
+    });
+
+    // Convert chunks to a Blob
+    const pdfBuffer = Buffer.concat(chunks);
+    const pdfBlob = new Blob([pdfBuffer], { type: 'application/pdf' });
+
+    // Create a reference to the Firebase Storage location
+    const storageRef = ref(storage, `images/report-${Date.now()}.pdf`);
+
+    // Upload the PDF to Firebase Storage
+    await uploadBytes(storageRef, pdfBlob);
+    console.log('PDF uploaded to Firebase Storage.');
+
+    // Get the download URL of the uploaded PDF
+    const downloadUrl = await getDownloadURL(storageRef);
+    console.log('PDF download URL:', downloadUrl);
+
+    return new NextResponse(JSON.stringify({ downloadUrl }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  } catch (error) {
+    console.error('Error handling POST request:', error);
+    return new NextResponse('Error generating report', { status: 500 });
+  }
+}
+
+// GET request to fetch and display the generated report
+export async function GET(request: Request) {
+  if (!generatedReport) {
+    return new NextResponse('No report generated yet', { status: 404 });
+  }
+
+  try {
+    const stream = await renderToStream(<ReportTemplate report={generatedReport.report} />);
+    return new NextResponse(stream as unknown as ReadableStream, {
+      headers: {
+        'Content-Type': 'application/pdf',
+      },
+    });
+  } catch (error) {
+    console.error('Error handling GET request:', error);
+    return new NextResponse('Error fetching report', { status: 500 });
+  }
 }

@@ -59,3 +59,15 @@ export interface ShareReport {
     reportUrl: string;
     createdAt?: Timestamp;
 }
+
+export interface ReportProps {
+    report: {
+        patientDetails: Patient,
+        hospitalDetails: Hospital,
+        imageUrls: string[],
+        conclusionText: string,
+        radiologistName: string,
+        headDoctorName: string,
+        createdAt: Timestamp,
+    };
+}
