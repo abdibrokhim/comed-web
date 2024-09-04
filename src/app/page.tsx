@@ -9,7 +9,7 @@ import {
   useUser,
 } from '@clerk/nextjs'
 import React, { useCallback, useEffect, useState, useRef, memo } from 'react';
-import { faAdd, faChevronDown, faClose, faFile, faChevronLeft, faChevronRight, faCompass, faShare, faPrint, faUpRightAndDownLeftFromCenter, faExpand, faSquareCheck, faTrash, faCircleCheck, faClone, faPenNib, faSquareMinus, faMinus, faCircleInfo, faEye } from '@fortawesome/free-solid-svg-icons';
+import { faAdd, faChevronDown, faClose, faFile, faChevronLeft, faChevronRight, faCompass, faShare, faPrint, faUpRightAndDownLeftFromCenter, faExpand, faSquareCheck, faTrash, faCircleCheck, faClone, faPenNib, faSquareMinus, faMinus, faCircleInfo, faEye, faBrain } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { Patient, Observation, Hospital, PatientObservation, ObservationDefaultView, ShareReport, ReportProps } from './types';
 import Notification from './notify';
@@ -73,6 +73,7 @@ export default function Home() {
   const [hDepartment, setHDepartment] = useState('');
   const [hAddress, setHAddress] = useState('');
   const [hPhone, setHPhone] = useState('');
+  const [showExpandedReportView, setShowExpandedReportView] = useState(false);
   
   // for testing purposes
   const sampleData = [
@@ -560,6 +561,78 @@ export default function Home() {
     }
   };
 
+  // fetch observation by id for report view with extra data
+  const fetchObservationByIdForReportView = async (observationId: string) => {
+    console.log('fetchObservationByIdForReportView() observationId: ', observationId);
+    setIsFetchingObservationById(true);
+    triggerNotification('Fetching observation...', 'info');
+  
+    try {
+      const observationRef = doc(firestore, 'hospitals', hospitalId, 'observations', observationId);
+      const observationSnapshot = await getDoc(observationRef);
+  
+      if (!observationSnapshot.exists()) {
+        console.warn(`No observation found for ID: ${observationId}`);
+        triggerNotification(`No observation found for ID: ${observationId}`, 'error');
+        return;
+      }
+  
+      const data = observationSnapshot.data();
+      
+      if (!data) {
+        console.warn('Data is undefined or null');
+        triggerNotification('Failed to fetch observation data', 'error');
+        return;
+      }
+  
+      const observationData: Observation = {
+        id: observationSnapshot.id,
+        patientId: data.patientId || '',
+        imageUrls: data.imageUrls || [],
+        conclusionText: data.conclusionText || '',
+        radiologistName: data.radiologistName || '',
+        headDoctorName: data.headDoctorName || '',
+        reportUrl: data.reportUrl || '',
+        status: data.status || '',
+        updatedAt: data.updatedAt,
+        createdAt: data.createdAt,
+      };
+  
+      // Fetch patient details using await to ensure we get the actual patient data
+      const patientDetails = await fetchPatientDetails(observationData.patientId);
+  
+      if (!patientDetails) {
+        console.warn(`No patient details found for patient ID: ${observationData.patientId}`);
+        triggerNotification(`No patient data found for patient ID: ${observationData.patientId}`, 'error');
+        return;
+      }
+  
+      const observation: PatientObservation = {
+        id: observationSnapshot.id,
+        patientId: observationData.patientId,
+        patientDetails: patientDetails,
+        hospitalDetails: hospitalData!,
+        imageUrls: observationData.imageUrls,
+        conclusionText: observationData.conclusionText,
+        radiologistName: observationData.radiologistName,
+        headDoctorName: observationData.headDoctorName,
+        reportUrl: observationData.reportUrl,
+        status: observationData.status,
+        updatedAt: observationData.updatedAt,
+        createdAt: observationData.createdAt,
+      };
+  
+      setOneObservation(observation); // Replace this with your state setter or handling logic
+      triggerNotification('Observation fetched successfully', 'success');
+  
+    } catch (error) {
+      console.error('Error fetching observation:', error);
+      triggerNotification('An error occurred while fetching observation', 'error');
+    } finally {
+      setIsFetchingObservationById(false);
+    }
+  };
+
   // fetch all observations only one image url
   const fetchDefaultViewObservations = async () => {
     console.log('fetching default view observations...');
@@ -765,6 +838,30 @@ export default function Home() {
     );
   });
 
+
+  const ReportViewerPDF = memo(({ reportPdf }: { reportPdf: string }) => {
+    
+    console.log('reportPdf: ', reportPdf);
+
+    return (
+      <div className="relative w-full flex items-center justify-center">
+        <div className="flex items-center justify-center w-full">
+          {reportPdf !== null || !isFetchingObservationById ? (
+            <iframe
+            src={reportPdf}
+            width="100%"
+            height="500px" 
+            className="rounded border"
+            title="PDF Report Viewer"
+          />
+          ) : (
+              <span className='flex justify-center items-center text-white'>{loader()}</span>
+          )}
+        </div>
+      </div>
+    );
+  });
+
   // in default view we will show all observations
   const DefaultView = () => {
     return (
@@ -774,6 +871,7 @@ export default function Home() {
               <div key={obs.id} className="flex flex-col justify-between gap-2">
                 {/* show frist image */}
                 <div className="flex items-center justify-center p-2 border border-[#a1a1aa] rounded-md">
+                <BlurImage>
                   <Image
                     priority={true}
                     src={obs.imageUrl}
@@ -782,6 +880,7 @@ export default function Home() {
                     height={300} // Adjust the height as needed
                     className="rounded"
                   />
+                </BlurImage>
                 </div>
               <button 
                 disabled={isFetchingObservationById}
@@ -965,13 +1064,226 @@ export default function Home() {
                       }
                     }
                   }}
-                  className={`bg-[#134e4a] text-black p-2 rounded-md w-full font-bold hover:bg-[#0f766e]`}>
+                  className={`bg-[#134e4a] text-black p-2 rounded-md w-full font-bold hover:bg-[#0f766e] ${
+                    oneObservation?.status === "approved" ? 'cursor-not-allowed' : 'cursor-pointer'
+                  }`}>
                   {!isApprovingObservation || !isDeletingObservation || !isUpdatingReportUrl || !isUploadingReport || !generatingReport || !isFetchingObservationById
                     ? <span className='flex justify-center items-center text-white'>{oneObservation?.status === "approved" ? "Approved" : "Approve"}</span>
                     : <span className='flex justify-center items-center text-white'>{loader()}</span>
                   }
                 </button>
             </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    );
+  };
+
+  // show expanded report view
+  const ExpandedReportView = () => {
+    const [selectTab, setSelectTab] = useState(0);
+
+    return (
+      <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-80 z-40">
+      <div className="w-[90%] bg-[#2e2e2e] rounded-md">
+        {/* header */}
+        <div className="flex flex-row justify-between border-b border-[#a1a1aa] p-4">
+          <p className="text-md">Observation details | Report</p>
+          <button
+            onClick={() => setShowExpandedReportView(!showExpandedReportView)}
+            className={`flex items-center justify-center w-[24px] h-[24px] rounded-full shadow cursor-pointer hover:bg-[#151515] p-2`}>
+              {isApprovingObservation || isDeletingObservation || isUpdatingReportUrl || isUploadingReport || generatingReport || isFetchingObservationById
+                ? <span className='flex justify-center items-center text-black'>{loader()}</span>
+                : <FontAwesomeIcon icon={faClose} />
+              }
+          </button>
+        </div>
+        <div className="flex flex-row p-4 gap-4 items-center justify-between">
+          {/* show images as slider*/}
+          <div className="flex flex-col gap-2 items-center w-1/2">
+              <div className="flex flex-row gap-4 w-full px-10">
+                  <button 
+                    disabled={isFetchingObservationById}
+                    onClick={() => {
+                      setSelectTab(0);
+                    }} 
+                    className={`p-2 rounded-md w-full border border-[#aaaaaa] hover:underline cursor-pointer ${selectTab === 0 ? 'underline' : ''}`}>
+                    {!isFetchingObservationById 
+                      ? <span className='flex justify-center items-center text-white'><FontAwesomeIcon icon={faBrain} className="mr-2" />Show Scans</span>
+                      : <span className='flex justify-center items-center text-white'>{loader()}</span>
+                    }
+                  </button>
+                  <button 
+                    disabled={isFetchingObservationById}
+                    onClick={() => {
+                      setSelectTab(1);
+                    }} 
+                    className={`p-2 rounded-md w-full border border-[#aaaaaa] hover:underline cursor-pointer ${selectTab === 1 ? 'underline' : ''}`}>
+                    {!isFetchingObservationById 
+                      ? <span className='flex justify-center items-center text-white'><FontAwesomeIcon icon={faFile} className="mr-2" />Show Report</span>
+                      : <span className='flex justify-center items-center text-white'>{loader()}</span>
+                    }
+                  </button>
+                </div>
+            <div className="w-full mt-4">
+              {selectTab === 0 
+                ? (<ImageSlider images={oneObservation?.imageUrls!} />) 
+                : (<ReportViewerPDF reportPdf={oneObservation?.reportUrl!} />)
+              }
+            </div>
+          </div>
+          <div className="w-1/2">
+            {/* show conclusion */}
+            <div className="">
+                <p className="text-md">Conclusion</p>
+                {!isFetchingObservationById
+                    ? 
+                <textarea
+                  disabled={true}
+                  value={oneObservation?.conclusionText || ''}
+                  autoComplete="off"
+                  id="conclusion1"
+                  className="mt-2 placeholder:text-[#aaaaaa] placeholder:text-sm w-full px-4 py-3 text-white bg-transparent rounded border border-[#a1a1aa] focus:outline-none focus:border-white resize-none"
+                  rows={4} // Specify the number of rows (height) of the textarea
+                />
+                : <span className='flex justify-center items-center text-white mt-2'>{loader()}</span>}
+            </div>
+            {/* show observation details */}
+            <div className="mt-[40px] flex flex-col gap-6 justify-between items-start">
+              <div className="w-full">
+                <p className="text-md">Quick info</p>
+                <div className="mt-2 flex flex-row gap-2 items-center justify-center">
+                  <div className="flex flex-col gap-1 items-start justify-start w-1/2">
+                    <p className="text-xs text-[#a1a1aa] block font-bold">Radiologist</p>
+                    {!isFetchingObservationById
+                    ? 
+                    <input
+                      disabled={true}
+                      value={oneObservation?.radiologistName || ''}
+                      autoComplete="off"
+                        type="text"
+                        id="radiologistName1"
+                        className="w-2/3 mt-2 placeholder:text-[#aaaaaa] placeholder:text-sm w-full px-4 py-3 text-white text-sm bg-transparent rounded border border-[#a1a1aa] focus:outline-none focus:border-white"
+                      />
+                      : <span className='flex justify-center items-center text-white mt-2'>{loader()}</span>}
+                  </div>
+                  <div className="flex flex-col gap-1 items-start justify-start w-1/2">
+                    <p className="text-xs text-[#a1a1aa] block font-bold">Head Doctor:</p>
+                    {!isFetchingObservationById
+                    ? 
+                    <input
+                      disabled={true}
+                      value={oneObservation?.headDoctorName || headDoctorName}
+                      autoComplete="off"
+                        type="text"
+                        id="headDoctorName1"
+                        className="w-2/3 mt-2 placeholder:text-[#aaaaaa] placeholder:text-sm w-full px-4 py-3 text-white text-sm bg-transparent rounded border border-[#a1a1aa] focus:outline-none focus:border-white"
+                      />
+                      : <span className='flex justify-center items-center text-white mt-2'>{loader()}</span>}
+                    </div>
+                </div>
+              </div>
+              {/* show user details */}
+              <div className="w-full">
+                <p className="text-md">Patient info</p>
+                <div className="mt-2 w-full flex flex-row gap-2 items-center justify-center">
+                <div className="flex flex-col gap-1 items-start justify-start w-3/6">
+                  <p className="text-xs text-[#a1a1aa] block font-bold">Full Name:</p>
+                  {!isFetchingObservationById
+                    ? 
+                    <input
+                        disabled={true}
+                        value={oneObservation?.patientDetails.name || ''}
+                        autoComplete="off"
+                          type="text"
+                          id="fullName1"
+                          className="w-2/3 mt-2 placeholder:text-[#aaaaaa] placeholder:text-sm w-full px-4 py-3 text-sm text-white bg-transparent rounded border border-[#a1a1aa] focus:outline-none focus:border-white"
+                        />
+                  : <span className='flex justify-center items-center text-white mt-2'>{loader()}</span>
+                }
+                  </div>
+                  <div className="flex flex-col gap-1 items-start justify-start w-1/6">
+                  <p className="text-xs text-[#a1a1aa] block font-bold">Birth Year:</p>
+                  {!isFetchingObservationById
+                    ? 
+                  <input
+                    disabled={true}
+                    value={oneObservation?.patientDetails.birthYear || ''}
+                    autoComplete="off"
+                      type="text"
+                      id="birthYear1"
+                      className="w-2/3 mt-2 placeholder:text-[#aaaaaa] placeholder:text-sm w-full px-4 py-3 text-sm text-white bg-transparent rounded border border-[#a1a1aa] focus:outline-none focus:border-white"
+                    />
+                  : <span className='flex justify-center items-center text-white mt-2'>{loader()}</span>
+                }
+                  </div>
+                  <div className="flex flex-col gap-1 items-start justify-start w-2/6">
+                  <p className="text-xs text-[#a1a1aa] block font-bold">Phone Number:</p>
+                  {!isFetchingObservationById
+                    ? 
+                  <input
+                  disabled={true}
+                  value={oneObservation?.patientDetails.phoneNumber || ''}
+                  autoComplete="off"
+                  type="text"
+                  id="phoneNumber1"
+                  className="w-2/3 mt-2 placeholder:text-[#aaaaaa] placeholder:text-sm w-full px-4 py-3 text-sm text-white bg-transparent rounded border border-[#a1a1aa] focus:outline-none focus:border-white"
+                  />
+                  : <span className='flex justify-center items-center text-white mt-2'>{loader()}</span>
+                }
+                    </div>
+                </div>
+                  <div className="mt-4 flex flex-row gap-1 items-center justify-start">
+                  <p className="text-xs text-[#a1a1aa] block font-bold">Status:</p>
+                  {!isFetchingObservationById
+                    ? 
+                    <button 
+                    disabled={true}
+                    className={`bg-[#064e3b] text-black p-1 rounded-full w-[100px] text-xs`}>
+                      <span className='flex justify-center items-center text-white text-xs'><FontAwesomeIcon icon={faCircleCheck} className="mr-2" />Approved</span>
+                  </button>
+                  : <span className='flex justify-center items-center text-white mt-2'>{loader()}</span>
+                }
+                    </div>
+              </div>
+            </div>
+            {/* show action buttons */}
+            <div className="flex flex-row gap-4 mt-[60px]">
+                  <button 
+                    disabled={isFetchingObservationById}
+                    onClick={() => {
+                      handleDeleteObservation();
+                    }} 
+                    className={`bg-[#7f1d1d] text-black p-2 rounded-md w-full font-bold hover:bg-[#b91c1c]`}>
+                    {!isFetchingObservationById 
+                      ? <span className='flex justify-center items-center text-white'><FontAwesomeIcon icon={faTrash} className="mr-2" />Delete</span>
+                      : <span className='flex justify-center items-center text-white'>{loader()}</span>
+                    }
+                  </button>
+                  <button 
+                    disabled={isFetchingObservationById}
+                    onClick={() => {
+                      window.open(oneObservation!.reportUrl, '_blank');
+                    }} 
+                    className={`bg-[#a1a1aa] text-black p-2 rounded-md w-full font-bold hover:bg-[#f4f4f5]`}>
+                    {!isFetchingObservationById 
+                      ? <span className='flex justify-center items-center text-black'><FontAwesomeIcon icon={faPrint} className="mr-2" />Print</span>
+                      : <span className='flex justify-center items-center text-black'>{loader()}</span>
+                    }
+                  </button>
+                  <button 
+                    disabled={isFetchingObservationById}
+                    onClick={() => {
+                      shareReport();
+                    }} 
+                    className={`bg-[#134e4a] text-black p-2 rounded-md w-full font-bold hover:bg-[#0f766e]`}>
+                    {!isFetchingObservationById 
+                      ? <span className='flex justify-center items-center text-white'><FontAwesomeIcon icon={faShare} className="mr-2" />Share</span>
+                      : <span className='flex justify-center items-center text-white'>{loader()}</span>
+                    }
+                  </button>
+                </div>
           </div>
         </div>
       </div>
@@ -993,12 +1305,18 @@ export default function Home() {
     console.log('updating report url');
     triggerNotification('Updating report URL...', 'info');
     try {
+      // udpate on reports collection
       const reportRef = await addDoc(collection(firestore, 'hospitals', hospitalId, 'reports'), {
         observationId: oneObservation?.id!,
         hospitalId: hospitalId,
         patientId: oneObservation?.patientId!,
         reportUrl: url,
         createdAt: new Date(),
+      });
+      // update on observations collection
+      const observationRef = doc(firestore, 'hospitals', hospitalId, 'observations', oneObservation?.id!);
+      await updateDoc(observationRef, {
+        reportUrl: url,
       });
       console.log('Report URL updated with ID:', reportRef.id);
       triggerNotification('Report URL updated successfully', 'success');
@@ -1637,31 +1955,24 @@ export default function Home() {
     };
 
     return (
-<div className="flex flex-row gap-4 flex-wrap justify-center m-auto pb-12">
-      <div className="relative shadow-lg rounded-md p-2 group">
-        {/* Blur or cover the image based on the state */}
-        <div className={`${isRevealed ? 'blur-0' : 'blur-md'} transition-all duration-300`}>
-        <div
-          className={`absolute inset-0 bg-black transition-opacity duration-300 flex items-center justify-center rounded-md ${
-            isRevealed ? 'opacity-0' : 'bg-opacity-50'
-          }`}
-        >
-          <div className="absolute inset-0 z-50 bg-black bg-opacity-50 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center rounded-md">
-            <div className="flex gap-4">
-              <button
-                onClick={handleRevealClick}
-                className={`bg-[#334155] text-white p-2 rounded-md font-bold hover:bg-[#94a3b8] cursor-pointer`}
-              >
-                <span className="flex justify-center items-center">
-                  <FontAwesomeIcon icon={faEye} className="mr-2" />
-                  {'Show'}
-                </span>
-              </button>
-            </div>
-          </div>
-        </div>
+<div className="flex flex-row gap-4 flex-wrap justify-center m-auto">
+      <div className="relative shadow-lg rounded-md group">
+        <div className={`${isRevealed ? 'blur-0' : 'blur-md'} transition-all duration-300 rounded-md`}>
           {children}
-      </div>
+        </div>
+        {!isRevealed && (
+          <div className="absolute inset-0 z-30 bg-black bg-opacity-50 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center rounded-md">
+            <button
+              onClick={handleRevealClick}
+              className={`bg-[#3f3f46] text-white px-5 py-3 rounded-md font-bold hover:bg-[#a1a1aa] cursor-pointer`}
+            >
+              <span className="flex justify-center items-center">
+                <FontAwesomeIcon icon={faEye} className="mr-2" />
+                {'Show'}
+              </span>
+            </button>
+          </div>
+        )}
       </div>
     </div>
     );
@@ -1672,7 +1983,7 @@ return (
       <div className="flex flex-col items-center justify-center block">
         <div className="flex flex-row flex-wrap gap-8 items-center justify-start">
             {reportViewData.map((obs, index) => (
-              <div key={obs.id} className="flex flex-col justify-between gap-2">
+              <div key={obs.id+index} className="flex flex-col justify-between gap-2">
                 {/* show report pdf preview */}
                 <div className="flex items-center justify-center p-2 border border-[#a1a1aa] rounded-md">
                   <BlurImage>
@@ -1690,8 +2001,9 @@ return (
                   <button 
                     disabled={isFetchingObservationById}
                     onClick={() => {
-                      fetchObservationById(obs.id);
-                      setShowExpandedObservation(!showExpandedObservation);
+                      console.log('fetching observation by id:', obs.observationId);
+                      fetchObservationByIdForReportView(obs.observationId);
+                      setShowExpandedReportView(!showExpandedReportView);
                     }} 
                     className={`bg-[#0c4a6e] text-black p-2 rounded-md w-full font-bold hover:bg-[#0369a1]`}>
                     {!isFetchingObservationById 
@@ -1753,22 +2065,22 @@ return (
             {/* show upload image view */}
             <div>
               <button 
-                onClick={handleSelectScansClick}
-                className="text-md cursor-pointer w-full hover:underline border border-white rounded-md px-4 py-4 flex items-center"
+                onClick={handleShowUploadImageView}
+                className={`text-md cursor-pointer w-full hover:underline border border-white rounded-md px-4 py-4 flex items-center ${showUploadImageView ? 'underline' : ''}`}
               ><FontAwesomeIcon icon={faAdd} className="mr-2"/> Upload Scan(s)</button>
             </div>
             {/* show portal view */}
             <div>
               <button 
                 onClick={handleShowPortalView}
-                className="text-md cursor-pointer w-full hover:underline border border-white rounded-md px-4 py-4 flex items-center"
+                className={`text-md cursor-pointer w-full hover:underline border border-white rounded-md px-4 py-4 flex items-center ${showPortalView ? 'underline' : ''}`}
               ><FontAwesomeIcon icon={faCompass} className="mr-2"/>Observations</button>
             </div>
             {/* show report view */}
             <div>
               <button 
                 onClick={handleShowReportView}
-                className="text-md cursor-pointer w-full hover:underline border border-white rounded-md px-4 py-4 flex items-center"
+                className={`text-md cursor-pointer w-full hover:underline border border-white rounded-md px-4 py-4 flex items-center ${showReportView ? 'underline' : ''}`}
               ><FontAwesomeIcon icon={faFile} className="mr-2"/>Reports</button>
             </div>
           </div>
@@ -1802,6 +2114,15 @@ return (
               <>
                 {oneObservation !== null 
                   ? (<ExpandedObservationView />) 
+                  : (<p className="">{loader()}</p>)
+                }
+              </>
+            )}
+            {/* show expanded report view */}
+            {showExpandedReportView && (
+              <>
+                {oneObservation !== null 
+                  ? (<ExpandedReportView />) 
                   : (<p className="">{loader()}</p>)
                 }
               </>
