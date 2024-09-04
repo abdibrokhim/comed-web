@@ -20,6 +20,7 @@ import { getFirestore, collection, getDocs, getDoc, setDoc, doc, deleteDoc, upda
 import { getStorage, ref, uploadString, getDownloadURL, uploadBytes } from 'firebase/storage';
 import { app } from './firebaseConfig';
 import { cn, downloadUrl } from './lib/utils';
+import { query, where } from 'firebase/firestore';
 
 const storage = getStorage(app);
 const firestore = getFirestore(app);
@@ -552,7 +553,10 @@ export default function Home() {
   
       setOneObservation(observation); // Replace this with your state setter or handling logic
       triggerNotification('Observation fetched successfully', 'success');
-  
+      if (showExpandedObservation) {
+        setShowExpandedObservation(false);
+      }
+      setShowExpandedReportView(true);
     } catch (error) {
       console.error('Error fetching observation:', error);
       triggerNotification('An error occurred while fetching observation', 'error');
@@ -560,7 +564,7 @@ export default function Home() {
       setIsFetchingObservationById(false);
     }
   };
-
+  
   // fetch observation by id for report view with extra data
   const fetchObservationByIdForReportView = async (observationId: string) => {
     console.log('fetchObservationByIdForReportView() observationId: ', observationId);
@@ -640,7 +644,8 @@ export default function Home() {
     
     try {
       const observationsRef = collection(firestore, 'hospitals', hospitalId, 'observations');
-      const observationsSnapshot = await getDocs(observationsRef);
+      const observationsQuery = query(observationsRef, where('status', '!=', 'approved'));
+      const observationsSnapshot = await getDocs(observationsQuery);
       const observationsData: ObservationDefaultView[] = [];
   
       observationsSnapshot.forEach((docSnapshot) => {
@@ -868,7 +873,7 @@ export default function Home() {
       <div className="flex flex-col items-center justify-center block">
         <div className="flex flex-row flex-wrap gap-8 items-center justify-center">
             {defaultViewObservations.map((obs, index) => (
-              <div key={obs.id} className="flex flex-col justify-between gap-2">
+              <div key={obs.id+'_'+index} className="flex flex-col justify-between gap-2">
                 {/* show frist image */}
                 <div className="flex items-center justify-center p-2 border border-[#a1a1aa] rounded-md">
                 <BlurImage>
@@ -1310,6 +1315,7 @@ export default function Home() {
         observationId: oneObservation?.id!,
         hospitalId: hospitalId,
         patientId: oneObservation?.patientId!,
+        coverImageUrl: oneObservation?.imageUrls[0],
         reportUrl: url,
         createdAt: new Date(),
       });
@@ -1343,7 +1349,7 @@ export default function Home() {
           imageUrls: oneObservation?.imageUrls!,
           conclusionText: oneObservation?.conclusionText!,
           radiologistName: oneObservation?.radiologistName!,
-          headDoctorName: oneObservation?.headDoctorName!,
+          headDoctorName: headDoctorName,
           createdAt: oneObservation?.createdAt!,
         }
       }
@@ -1983,7 +1989,7 @@ return (
       <div className="flex flex-col items-center justify-center block">
         <div className="flex flex-row flex-wrap gap-8 items-center justify-start">
             {reportViewData.map((obs, index) => (
-              <div key={obs.id+index} className="flex flex-col justify-between gap-2">
+              <div key={obs.observationId+'_'+index} className="flex flex-col justify-between gap-2">
                 {/* show report pdf preview */}
                 <div className="flex items-center justify-center p-2 border border-[#a1a1aa] rounded-md">
                   <BlurImage>
@@ -1993,7 +1999,7 @@ return (
                       alt={`Observation Image ${index}`}
                       width={300}  // Adjust the width as needed
                       height={300} // Adjust the height as needed
-                      className="rounded"
+                      className="rounded width-auto height-auto"
                     />
                   </BlurImage>
                 </div>
