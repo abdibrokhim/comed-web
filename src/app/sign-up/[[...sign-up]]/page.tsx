@@ -1,5 +1,6 @@
 import Image from "next/image";
 import { SignUp } from '@clerk/nextjs'
+import logo from '../../../../assets/logo_white.png'
 
 export default function SignUpPage() {
   return (
@@ -7,7 +8,7 @@ export default function SignUpPage() {
                 <aside className="absolute top-0 left-0 w-1/2 h-full bg-gradient-to-r from-blue-500 to-blue-700">
         <div className="flex flex-col items-center justify-center h-full space-y-8">
           <Image
-            src="/logo.svg"
+            src={logo}
             alt="logo"
             width={100}
             height={100}
