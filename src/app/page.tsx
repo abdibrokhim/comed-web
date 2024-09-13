@@ -1667,7 +1667,7 @@ export default function Home() {
         <div className="p-4">
           {/* workspace */}
           <div className="flex flex-row justify-between border border-[#a1a1aa] p-4 rounded-md">
-            <p className="text-md">Workspace: <span className="text-md ml-[20px] text-[#aaaaaa]">{user?.fullName}'s workspace...</span></p>
+            <p className="text-md">Workspace: <span className="text-md ml-[20px] text-[#aaaaaa]">{user?.fullName}&apos;s workspace...</span></p>
             <button
               onClick={() => {}}
               className={`flex items-center justify-center w-[24px] h-[24px] rounded-full shadow cursor-pointer`}>
