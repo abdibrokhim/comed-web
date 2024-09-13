@@ -913,7 +913,7 @@ export default function Home() {
   const handleHeadDoctorNameChange = useCallback((e: any) => {
     setHeadDoctorName(e.target.value);
   }, []);
-
+  
   // show expanded observation
   const ExpandedObservationView = () => {
     return (
