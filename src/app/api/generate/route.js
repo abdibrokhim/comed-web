@@ -45,7 +45,7 @@ export async function POST(req) {
     
     try {
         const completion = await openai.chat.completions.create({
-            model: "ft:gpt-3.5-turbo-0125:abdibrokhim:brainmri-0904:9BzUvHoA",
+            model: "ft:gpt-4o-2024-08-06:abdibrokhim:brainmri-1309:A78sJcH7",
             messages: params,
         });
         const result = completion.choices[0].message.content;

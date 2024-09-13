@@ -75,6 +75,10 @@ export default function Home() {
   const [hAddress, setHAddress] = useState('');
   const [hPhone, setHPhone] = useState('');
   const [showExpandedReportView, setShowExpandedReportView] = useState(false);
+
+  // TODO: 
+  // empty select scans input
+  // fix observation view and conclusion view or report view
   
   // for testing purposes
   const sampleData = [
