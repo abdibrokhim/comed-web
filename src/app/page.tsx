@@ -76,10 +76,6 @@ export default function Home() {
   const [hPhone, setHPhone] = useState('');
   const [showExpandedReportView, setShowExpandedReportView] = useState(false);
 
-  // TODO: 
-  // empty select scans input
-  // fix observation view and conclusion view or report view
-  
   // for testing purposes
   const sampleData = [
     "https://firebasestorage.googleapis.com/v0/b/comed-27032024.appspot.com/o/images%2FY12.jpg?alt=media&token=5e53394c-f012-4aee-901c-c028f1c2e570",
@@ -557,10 +553,6 @@ export default function Home() {
   
       setOneObservation(observation); // Replace this with your state setter or handling logic
       triggerNotification('Observation fetched successfully', 'success');
-      if (showExpandedObservation) {
-        setShowExpandedObservation(false);
-      }
-      setShowExpandedReportView(true);
     } catch (error) {
       console.error('Error fetching observation:', error);
       triggerNotification('An error occurred while fetching observation', 'error');
@@ -897,7 +889,7 @@ export default function Home() {
                   // setExpandObservationIndex(obs.id);
                   console.log('fetching observation by id: ', obs.id);
                   fetchObservationById(obs.id);
-                  setShowExpandedObservation(!showExpandedObservation);
+                  setShowExpandedObservation(true);
                 }} 
                 className={`bg-[#0c4a6e] text-black p-2 rounded-md w-full font-bold hover:bg-[#0369a1]`}>
                 {!isFetchingObservationById 
@@ -1471,6 +1463,7 @@ export default function Home() {
         setPatientId('');
         setConclusion('');
         setRadiologistName('');
+        setDroppedFiles([]);
 
         setShowPortalView(true);
       } else {
